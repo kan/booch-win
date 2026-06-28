@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     booch-win bootstrap: 素の Windows から private dotfiles を入れ、dotfiles-win setup を起動する。
 
@@ -21,7 +21,9 @@
 [CmdletBinding()]
 param(
     [string]$Dir  = (Join-Path $HOME 'dotfiles'),
-    [string]$Repo = 'kan/dotfiles'
+    [string]$Repo = 'kan/dotfiles',
+    # テスト用: 関数定義だけ読み込み、末尾の main を実行しない（Pester が dot-source する）。
+    [switch]$NoRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,15 +33,21 @@ function Write-Step { param([string]$Msg) Write-Host "==> $Msg" -ForegroundColor
 function Write-Ok   { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
 function Write-Warn { param([string]$Msg) Write-Host "  [!] $Msg"  -ForegroundColor Yellow }
 
+# コマンド存在判定の継ぎ目（テストでモックしやすいよう関数化）。
+function Test-Command { param([string]$Name) [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+
 # --- 1. 前提整備 ------------------------------------------------------------
 function Initialize-Prereq {
     # PS5.1 の既定は TLS1.0/1.1 のことがあり GitHub 等への接続が失敗する。
     try {
         [Net.ServicePointManager]::SecurityProtocol = `
             [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    } catch {}
+    } catch {
+        # 既に TLS1.2+ 固定の環境等では設定不可。best-effort なので握り潰す。
+        Write-Verbose "TLS1.2 の明示設定をスキップ: $_"
+    }
 
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    if (-not (Test-Command winget)) {
         # TODO(#7): App Installer 不在フォールバック（Git standalone 直 DL / App Installer 導入案内）
         throw 'winget (App Installer) が見つかりません。Microsoft Store の "アプリ インストーラー" を入れてから再実行してください。'
     }
@@ -49,7 +57,7 @@ function Initialize-Prereq {
 # --- 2. 最小ツール導入（git / gh） ------------------------------------------
 function Install-IfMissing {
     param([string]$Cmd, [string]$WingetId, [string]$Label)
-    if (Get-Command $Cmd -ErrorAction SilentlyContinue) {
+    if (Test-Command $Cmd) {
         Write-Ok "$Label already installed"
         return
     }
@@ -104,17 +112,25 @@ function Invoke-DotfilesWin {
 }
 
 # --- main -------------------------------------------------------------------
-Write-Host ''
-Write-Host 'booch-win bootstrap' -ForegroundColor Magenta
-Write-Host ''
+function Invoke-Main {
+    param([string]$RepoSlug, [string]$Target)
+    Write-Host ''
+    Write-Host 'booch-win bootstrap' -ForegroundColor Magenta
+    Write-Host ''
 
-Initialize-Prereq
-Install-IfMissing -Cmd 'git' -WingetId 'Git.Git'    -Label 'Git'
-Install-IfMissing -Cmd 'gh'  -WingetId 'GitHub.cli' -Label 'GitHub CLI'
-Update-SessionPath
-Connect-GitHub
-Get-Repo -RepoSlug $Repo -Target $Dir
-Invoke-DotfilesWin -Target $Dir
+    Initialize-Prereq
+    Install-IfMissing -Cmd 'git' -WingetId 'Git.Git'    -Label 'Git'
+    Install-IfMissing -Cmd 'gh'  -WingetId 'GitHub.cli' -Label 'GitHub CLI'
+    Update-SessionPath
+    Connect-GitHub
+    Get-Repo -RepoSlug $RepoSlug -Target $Target
+    Invoke-DotfilesWin -Target $Target
 
-Write-Host ''
-Write-Ok 'bootstrap 完了'
+    Write-Host ''
+    Write-Ok 'bootstrap 完了'
+}
+
+# -NoRun のときは関数定義だけ読み込む（Pester から dot-source してテストする用）。
+if (-not $NoRun) {
+    Invoke-Main -RepoSlug $Repo -Target $Dir
+}
