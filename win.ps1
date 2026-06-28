@@ -54,7 +54,8 @@ function Install-IfMissing {
         return
     }
     Write-Step "Installing $Label ($WingetId)..."
-    # user スコープ優先（重い昇格は dotfiles-win 本体に委譲する）。
+    # winget の既定スコープに任せる。Git.Git はマシンスコープのインストーラのため
+    # ここで UAC が出ることがある（GitHub.cli は user スコープで完結しやすい）。
     & winget install -e --id $WingetId --accept-source-agreements --accept-package-agreements --silent
     if ($LASTEXITCODE -ne 0) { throw "$Label のインストールに失敗しました (winget exit $LASTEXITCODE)" }
 }
@@ -95,7 +96,11 @@ function Invoke-DotfilesWin {
     $entry = Join-Path $Target 'dotfiles-win.ps1'
     if (-not (Test-Path $entry)) { throw "dotfiles-win.ps1 が見つかりません: $entry" }
     Write-Step 'dotfiles-win setup を起動...'
-    & $entry setup
+    # .ps1 を直接 `&` で呼ぶとファイル実行扱いとなり ExecutionPolicy（既定 Restricted の
+    # クライアントでは実行不可）に阻まれる。bootstrap 自体は irm|iex で免除されているが
+    # 本体起動はプロセス限定の Bypass で確実に通す。
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $entry setup
+    if ($LASTEXITCODE -ne 0) { throw "dotfiles-win setup が失敗しました (exit $LASTEXITCODE)" }
 }
 
 # --- main -------------------------------------------------------------------
