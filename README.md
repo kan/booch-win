@@ -46,6 +46,20 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - **`irm | iex` は ExecutionPolicy を変更せず動く**（ファイル実行ではないため）。
 - **冪等**: 各ステップ「無ければ入れる / 既存なら pull」。再実行で壊れない。
 
+## 開発・テスト
+
+- **Tier1（自動・CI）**: `tests/win.Tests.ps1`（Pester 5、winget/gh/git をモックしロジック検証）と
+  PSScriptAnalyzer・構文 parse を GitHub Actions（`windows-latest`）で実行。ローカルでは:
+
+  ```powershell
+  Invoke-Pester -Path ./tests
+  Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+  ```
+
+- **Tier2（手動・実環境）**: 実 winget・実認証・実 clone までのスモークは使い捨ての
+  Windows Sandbox で行う。手順は [`tests/sandbox/manual-smoke.md`](tests/sandbox/manual-smoke.md)。
+  ホスト型 CI は winget 不在・対話認証・UAC のため不可。
+
 ## 将来
 
 Windows 側の汎用ブートストラップ処理（winget 導入ルーチン・設定同期エンジン・doctor フレーム等）を
