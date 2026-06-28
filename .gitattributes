@@ -1,0 +1,4 @@
+# 改行は LF 固定（`irm | iex` で取得する win.ps1 を環境差で壊さないため）
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.md  text eol=lf
