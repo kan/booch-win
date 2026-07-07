@@ -2,8 +2,10 @@
 
 Windows 開発環境のブートストラップを担う公開リポジトリ。
 
-現状の役割は **「素の Windows から private な dotfiles を入れて `dotfiles-win setup` が走る
-状態までを 1 コマンドで持っていく」ワンライナー bootstrap（`win.ps1`）のホスト**。
+現在の役割は次の 2 つです。
+
+1. **ワンライナー bootstrap（`win.ps1`）のホスト**: 素の Windows から private な dotfiles を入れて `dotfiles-win setup` が走る状態までを 1 コマンドで持っていく。
+2. **dotfiles-win 汎用ライブラリ（`lib/*.ps1`）のホスト**: winget / sync / doctor / GitHub release / 各種ツール導入など、個人設定に依存しない PowerShell 実装を提供する。
 
 > Linux 側の [booch](https://github.com/kan/booch)（Bash 製・WSL2/Ubuntu 向け）の Windows 版に
 > あたる位置づけ。ただし booch とは別実装（PowerShell / winget ベース）で、コードは共有せず
@@ -24,7 +26,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 3. 現セッションの PATH を再解決して `git` / `gh` を即利用可能にする
 4. `gh auth login`（ブラウザ/デバイスフロー）で GitHub 認証
 5. private な dotfiles を clone（既存なら pull）
-6. `dotfiles-win.ps1 setup` へ委譲（winget 群導入・設定同期・UAC 昇格は dotfiles-win 本体が担う）
+6. `setup-win/dotfiles-win.ps1 setup` へ委譲（winget 群導入・設定同期・UAC 昇格は dotfiles-win 本体が担う）
 
 ### パラメータ付きで使う
 
@@ -46,6 +48,21 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - **`irm | iex` は ExecutionPolicy を変更せず動く**（ファイル実行ではないため）。
 - **冪等**: 各ステップ「無ければ入れる / 既存なら pull」。再実行で壊れない。
 
+## `lib/` の位置づけ
+
+`lib/*.ps1` は dotfiles-win から dot-source される汎用処理です。
+
+- `common.ps1`: 表示・共通実行ヘルパー
+- `sync.ps1`: repo ↔ 配備先の同期エンジン
+- `winget.ps1`: winget 呼び出し・導入判定・追跡外監査
+- `doctor.ps1`: doctor 表示フレーム
+- `download.ps1` / `github.ps1`: ダウンロード・GitHub Releases 取得
+- `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
+- `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助
+- `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
+
+個人・環境固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
+
 ## 開発・テスト
 
 - **Tier1（自動・CI）**: `tests/win.Tests.ps1`（Pester 5、winget/gh/git をモックしロジック検証）と
@@ -53,7 +70,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
   ```powershell
   Invoke-Pester -Path ./tests
-  Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+  $paths = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' | ForEach-Object FullName); foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
   ```
 
 - **Tier2（手動・実環境）**: 実 winget・実認証・実 clone までのスモークは使い捨ての
@@ -62,10 +79,9 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 ## 将来
 
-Windows 側の汎用ブートストラップ処理（winget 導入ルーチン・設定同期エンジン・doctor フレーム等）を
-OSS 化する需要が出た段階で、その受け皿をこのリポジトリに置く想定。現時点では dotfiles リポジトリ内に
-留め、ここには移設しない。
+dotfiles-win のオーケストレーション（setup / doctor / sync / cleanup の組み立て）は段階的に dotfiles 側からこちらへ寄せる。まずは `lib/*.ps1` を公開基盤として切り出し、dotfiles 側は config とエントリに集中させる。
 
 ## ライセンス
 
 MIT
+

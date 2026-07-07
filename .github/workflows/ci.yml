@@ -15,17 +15,21 @@ jobs:
       - name: Syntax parse (PowerShell AST)
         shell: pwsh
         run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path ./win.ps1), [ref]$null, [ref]$errors) | Out-Null
-          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          $files = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error (('{0}: {1}' -f $file, $_.Message)) }; exit 1 }
+          }
           Write-Host 'OK: no parse errors'
 
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -MinimumVersion 1.21.0 -Force -Scope CurrentUser
-          $issues = Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+          $paths = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          $issues = foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
           $issues | Format-Table -AutoSize
           if ($issues | Where-Object Severity -eq 'Error') { exit 1 }
 
@@ -39,3 +43,4 @@ jobs:
           $cfg.Run.Exit = $true
           $cfg.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $cfg
+

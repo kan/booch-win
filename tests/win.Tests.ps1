@@ -108,6 +108,7 @@ Describe 'Invoke-DotfilesWin' {
         Mock Test-Path { $false }
         Mock Write-Step { }
         { Invoke-DotfilesWin -Target (Join-Path $TestDrive 'dot') } |
-            Should -Throw -ExpectedMessage '*dotfiles-win.ps1*'
+            Should -Throw -ExpectedMessage '*setup-win/dotfiles-win.ps1*'
     }
 }
+

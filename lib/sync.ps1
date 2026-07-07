@@ -1,0 +1,136 @@
+﻿#Requires -Version 5.1
+#
+# lib/sync.ps1: 汎用機構 — 設定ファイルの双方向同期エンジンと Transform
+#
+# dotfiles-win.ps1 から dot-source される。何を同期するか ($SyncPairs) は
+# 個人選択なので dotfiles-win.config.ps1。ここは「やり方」だけ。詳細は #6。
+
+function Test-FilesEqual {
+    param([string]$A, [string]$B)
+    if ((Get-Item $A).Length -ne (Get-Item $B).Length) { return $false }
+    return (Get-FileHash $A).Hash -eq (Get-FileHash $B).Hash
+}
+
+# ------------------------------------------------------------
+# SyncPairs の表示ラベル
+# doctor の config files 表示と setup 末尾の Invoke-Sync が同じ見た目に
+# なるよう、ラベル導出をここに一元化する。repo 相対パスから共通ノイズの
+# `claude/skills/` 接頭辞を落とす (例: japanese-tech-writing/SKILL.md)。
+# ------------------------------------------------------------
+function Get-SyncPairLabel {
+    param([Parameter(Mandatory)]$Pair)
+    return ($Pair.Repo -replace '^claude/skills/', '')
+}
+
+# ラベル列幅 = 最長ラベル + 余白 2 字。同期ペアの増減に自動追従し、
+# はみ出しも過剰な余白も出さない (Write-Status の -LabelWidth に渡す)。
+function Get-SyncPairLabelWidth {
+    param([Parameter(Mandatory)][array]$Pairs)
+    return (($Pairs | ForEach-Object { (Get-SyncPairLabel $_).Length } |
+            Measure-Object -Maximum).Maximum) + 2
+}
+
+# ------------------------------------------------------------
+# テキストファイル I/O（UTF-8 / BOM なし / 改行は読み書きで保持）
+# repo の dotfiles は LF・BOM なし UTF-8 で統一しているため、それを
+# 崩さずに内容を読み書きするための薄いラッパー。
+# ------------------------------------------------------------
+function Read-TextFile {
+    param([Parameter(Mandatory)][string]$Path)
+    return [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+}
+
+function Write-TextFile {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Text)
+    $enc = New-Object System.Text.UTF8Encoding($false)  # BOM なし
+    [System.IO.File]::WriteAllText($Path, $Text, $enc)
+}
+
+# ------------------------------------------------------------
+# 機械固有値の展開 / 正規化（SyncPairs の Transform 用）
+#
+# リポジトリ側 (gitconfig-win) は機械非依存のベア名 op-ssh-sign.exe を
+# 正本として持つ。一方 1Password デスクトップアプリは gpg.ssh.program を
+# 自分が配置した絶対パスにしたがり、そうでないと「gitconfig を修正
+# しますか」という通知を出し続ける。そこで:
+#   - 展開 (repo → 環境): program 行をこの PC の絶対パスへ書き換える
+#   - 正規化 (環境 → repo): 絶対パスをベア名へ戻す（repo に機械固有の
+#     ユーザ名やパスを混入させない）
+# 同期の一致判定も「環境ファイル == 展開後の repo」で行うため、絶対パス
+# 状態を「最新」と認識でき、毎回 DIVERGED と誤判定しない。
+# ------------------------------------------------------------
+
+# 1Password (op-ssh-sign.exe) のこの PC での絶対パス。1Password CLI が
+# %LOCALAPPDATA%\Microsoft\WindowsApps\ に固定名で配置するもので、
+# 1Password アプリが「理想的」とみなすパスでもある。
+function Get-OpSshSignPath {
+    $p = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\op-ssh-sign.exe'
+    if (Test-Path $p) { return $p }
+    $cmd = Get-Command 'op-ssh-sign.exe' -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $p
+}
+
+# gitconfig 内の [gpg "ssh"] program 行の値を差し替える。インデント
+# (タブ) は保持。op-ssh-sign を含む program 行のみが対象。
+function Set-GitGpgProgram {
+    param([Parameter(Mandatory)][string]$Content, [Parameter(Mandatory)][string]$Value)
+    # 行末は [ \t]*$ に限定する。\s*$ だと \s が改行も含むため、置換が
+    # program 行末の改行まで飲み込んで後続行と連結してしまう。
+    $pattern = '(?m)^([ \t]*program[ \t]*=[ \t]*).*op-ssh-sign\.exe[ \t]*$'
+    return [regex]::Replace($Content, $pattern, {
+        param($m) $m.Groups[1].Value + $Value
+    })
+}
+
+# repo の内容をこの PC 用に展開する（ベア名 → 絶対パス）。
+function Expand-RepoToDeploy {
+    param([Parameter(Mandatory)][string]$Transform, [Parameter(Mandatory)][string]$Content)
+    switch ($Transform) {
+        'GitGpgProgram' {
+            $abs = (Get-OpSshSignPath) -replace '\\', '\\'  # git config 用に \ をエスケープ
+            return Set-GitGpgProgram $Content $abs
+        }
+        default { return $Content }
+    }
+}
+
+# 環境の内容を repo 用に正規化する（絶対パス → ベア名）。
+function Normalize-DeployToRepo {
+    param([Parameter(Mandatory)][string]$Transform, [Parameter(Mandatory)][string]$Content)
+    switch ($Transform) {
+        'GitGpgProgram' { return Set-GitGpgProgram $Content 'op-ssh-sign.exe' }
+        default { return $Content }
+    }
+}
+
+# repo と環境が同期済みか判定する。Transform 付きペアは「環境 == 展開後
+# の repo」で比較し、機械固有展開を差分とみなさない。
+function Test-PairInSync {
+    param([Parameter(Mandatory)]$Pair, [Parameter(Mandatory)][string]$RepoFile, [Parameter(Mandatory)][string]$DestFile)
+    if (-not $Pair.Transform) {
+        return (Test-FilesEqual $RepoFile $DestFile)
+    }
+    $expected = Expand-RepoToDeploy $Pair.Transform (Read-TextFile $RepoFile)
+    return ($expected -ceq (Read-TextFile $DestFile))
+}
+
+# repo → 環境へ配置する（Transform 付きなら展開してから書き込む）。
+function Deploy-Pair {
+    param([Parameter(Mandatory)]$Pair, [Parameter(Mandatory)][string]$RepoFile, [Parameter(Mandatory)][string]$DestFile)
+    if ($Pair.Transform) {
+        Write-TextFile $DestFile (Expand-RepoToDeploy $Pair.Transform (Read-TextFile $RepoFile))
+    } else {
+        Copy-Item $RepoFile $DestFile -Force
+    }
+}
+
+# 環境 → repo へ取り込む（Transform 付きなら正規化してから書き込む）。
+function Import-Pair {
+    param([Parameter(Mandatory)]$Pair, [Parameter(Mandatory)][string]$RepoFile, [Parameter(Mandatory)][string]$DestFile)
+    if ($Pair.Transform) {
+        Write-TextFile $RepoFile (Normalize-DeployToRepo $Pair.Transform (Read-TextFile $DestFile))
+    } else {
+        Copy-Item $DestFile $RepoFile -Force
+    }
+}

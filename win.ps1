@@ -101,8 +101,8 @@ function Get-Repo {
 # --- 6. 本体へ委譲 ----------------------------------------------------------
 function Invoke-DotfilesWin {
     param([string]$Target)
-    $entry = Join-Path $Target 'dotfiles-win.ps1'
-    if (-not (Test-Path $entry)) { throw "dotfiles-win.ps1 が見つかりません: $entry" }
+    $entry = Join-Path (Join-Path $Target 'setup-win') 'dotfiles-win.ps1'
+    if (-not (Test-Path $entry)) { throw "setup-win/dotfiles-win.ps1 が見つかりません: $entry" }
     Write-Step 'dotfiles-win setup を起動...'
     # .ps1 を直接 `&` で呼ぶとファイル実行扱いとなり ExecutionPolicy（既定 Restricted の
     # クライアントでは実行不可）に阻まれる。bootstrap 自体は irm|iex で免除されているが
