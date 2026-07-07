@@ -116,6 +116,26 @@ function Set-TomlTopLevelKey {
     return (($lines -join "`n") + "`n")
 }
 
+# TOML ファイルのトップレベル `key = value` だけを順序付きで読み取る。
+# コメント行・空行を飛ばし、最初のセクションヘッダ (`[section]`) に達したら打ち切る。
+# 値は TOML 表記のまま保持するため、そのまま Set-TomlTopLevelKey / Update-CodexConfig
+# の入力へ再利用できる。用途は dotfiles 側の codex/config.toml を SSOT として読むなど。
+function Get-TomlTopLevelKeys {
+    param([Parameter(Mandatory)][string]$Path)
+    $keys = [ordered]@{}
+    if (-not (Test-Path $Path)) { return $keys }
+
+    $content = Read-TextFile $Path
+    $lines = ($content -replace "`r`n", "`n") -split "`n"
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[') { break }
+        if ($line -match '^\s*($|#)') { continue }
+        if ($line -cmatch '^[ \t]*([A-Za-z0-9_.-]+)[ \t]*=[ \t]*(.*)$') {
+            $keys[$Matches[1]] = $Matches[2]
+        }
+    }
+    return $keys
+}
 # ~/.codex/config.toml をキー単位で冪等更新する (Linux booch_finalize_codex_config と
 # 対称)。ユーザーが足した他キー・[projects] 等のセクションは壊さない。$Keys は
 # [ordered]@{ キー = TOML 表記の値 } (選択は config の $CodexConfigKeys)。
