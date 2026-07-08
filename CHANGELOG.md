@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-08
+
 ### Added
 - `booch-win scaffold <kind> -Path <dir> [-Force]`（`lib/scaffold.ps1` + `templates/`）で
   booch-win を使う dotfiles-win リポジトリの最小雛形を生成する。生成物は冪等（既存は上書き
@@ -30,5 +32,6 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kan/booch-win/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kan/booch-win/releases/tag/v0.1.0
