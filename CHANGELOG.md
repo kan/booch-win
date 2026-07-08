@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-08
+
 ### Added
 - `Invoke-BoochWinCleanup`（`lib/cleanup.ps1`）: 一時ファイル / npm・go キャッシュ / Tauri
   target / WSL vhdx 最適化の掃除を Mode（light|full）と opt-in フラグ（-CleanTauri /
@@ -38,6 +40,7 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kan/booch-win/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kan/booch-win/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kan/booch-win/releases/tag/v0.1.0
