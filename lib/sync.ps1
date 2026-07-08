@@ -134,3 +134,90 @@ function Import-Pair {
         Copy-Item $DestFile $RepoFile -Force
     }
 }
+
+# ------------------------------------------------------------
+# 同期オーケストレーション
+# 各 SyncPair を順に判定し、差分があれば diff を見せて対話選択 (r/e/s) で
+# 反映する。何を同期するか ($Pairs) と repo の場所 ($DotfilesDir) は消費側が
+# 渡し、判定・展開・書き込みは上のエンジン関数に委ねる。表示・対話の挙動は
+# 従来 dotfiles-win.ps1 の Invoke-Sync と同一。
+# ------------------------------------------------------------
+function Invoke-BoochWinSync {
+    param(
+        [Parameter(Mandatory)][array]$Pairs,
+        [Parameter(Mandatory)][string]$DotfilesDir
+    )
+    Write-Host '=== Config file sync ==='
+    Write-Host ''
+
+    foreach ($pair in $Pairs) {
+        $repoFile = Join-Path $DotfilesDir $pair.Repo
+        $destFile = $pair.Dest
+        # 表示ラベルは doctor の config files と共通 (接頭辞除去)。
+        $label = Get-SyncPairLabel $pair
+
+        if (-not (Test-Path $repoFile)) {
+            Write-Fail "${label}: repo file not found"
+            continue
+        }
+
+        $destDir = Split-Path -Parent $destFile
+        if ($destDir -and -not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        }
+
+        if (-not (Test-Path $destFile)) {
+            Deploy-Pair $pair $repoFile $destFile
+            Write-Ok "${label}: deployed (new)"
+            continue
+        }
+
+        if (Test-PairInSync $pair $repoFile $destFile) {
+            Write-Ok "${label}: up to date"
+            continue
+        }
+
+        Write-Host ''
+        Write-Warn "${label}: files differ"
+        Write-Host '  --- diff (repo → environment) ---'
+        try {
+            # Windows PowerShell 5.1 は Get-Content の既定エンコーディングが OS の
+            # コードページ (cp932 等) になり UTF-8 が化けるため UTF8 を明示する。
+            # Transform 付きペアは「展開後の repo」と環境を比較し、機械固有展開を
+            # 差分として見せない（本当に差している行だけを出す）。
+            if ($pair.Transform) {
+                $a = (Expand-RepoToDeploy $pair.Transform (Read-TextFile $repoFile)) -split "`n"
+                $b = (Read-TextFile $destFile) -split "`n"
+            } else {
+                $a = Get-Content $repoFile -Encoding UTF8
+                $b = Get-Content $destFile -Encoding UTF8
+            }
+            $diff = Compare-Object $a $b
+            foreach ($line in $diff) {
+                $marker = if ($line.SideIndicator -eq '<=') { '<' } else { '>' }
+                Write-Host "  $marker $($line.InputObject)"
+            }
+        } catch {
+            Write-Host '  (diff 表示に失敗)'
+        }
+        Write-Host ''
+        Write-Host '  [r] Use repo version → deploy to environment'
+        Write-Host '  [e] Use environment version → import to repo'
+        Write-Host '  [s] Skip'
+        $choice = Read-Host '  Choice [r/e/s]'
+
+        switch ($choice.ToLower()) {
+            'r' {
+                Deploy-Pair $pair $repoFile $destFile
+                Write-Ok "${label}: deployed from repo"
+            }
+            'e' {
+                Import-Pair $pair $repoFile $destFile
+                Write-Ok "${label}: imported to repo"
+            }
+            default {
+                Write-Info "${label}: skipped"
+            }
+        }
+    }
+}

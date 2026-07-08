@@ -10,6 +10,9 @@
 - `booch-win scaffold <kind> -Path <dir> [-Force]`（`lib/scaffold.ps1` + `templates/`）で
   booch-win を使う dotfiles-win リポジトリの最小雛形を生成する。生成物は冪等（既存は上書き
   しない）で、submodule 追加などの手順は生成される README に案内する。
+- `Invoke-BoochWinSync`（`lib/sync.ps1`）: SyncPair を順に判定し差分を diff 表示して対話
+  選択（r/e/s）で反映する同期オーケストレーション。消費側（dotfiles-win）の `Invoke-Sync`
+  はこれを呼ぶ薄いラッパーになる（表示・対話の挙動は従来と同一）。
 
 ## [0.1.0] - 2026-07-08
 
