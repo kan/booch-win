@@ -61,8 +61,28 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
 - `apidoc.ps1`: `lib/*.ps1` のヘッダ・公開関数を抽出して `booch-win help` を組み立てる
+- `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
 
 個人・環境固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
+
+### 消費側からの取り込み（`bootstrap.ps1`）
+
+dotfiles-win のようなエントリスクリプトは、`lib/bootstrap.ps1` を dot-source して次の 2 関数で
+booch-win を取り込みます。
+
+```powershell
+. (Join-Path $boochWinRoot 'lib\bootstrap.ps1')
+$root = Resolve-BoochWinRoot -DotfilesDir $DotfilesDir -SetupWinDir $SetupWinDir
+foreach ($f in Get-BoochWinLibFile -Root $root) { . $f }   # ★エントリのトップレベルで dot-source
+```
+
+- `Resolve-BoochWinRoot`: `BOOCH_WIN_ROOT` → `vendor/booch-win` → sibling `../booch-win` → legacy の
+  順にルートを解決する（Linux 側 booch の `BOOCH_ROOT` 解決と対称）。
+- `Get-BoochWinLibFile`: dot-source すべき `lib/*.ps1`（`bootstrap.ps1` / `apidoc.ps1` を除く、
+  `common.ps1` 先頭）を返す。新しい lib を足せば消費側を変えずに自動で載る。
+- **ロードは必ずエントリのトップレベルで回す**（1 関数に隠蔽しない）。lib はエントリが定義する
+  `$Script:` 変数を参照する設計で、関数内 dot-source では呼び出し元スコープへ伝播しないため。
+  詳細は `booch-win help bootstrap`。
 
 ## API を引く（`booch-win help`）
 
