@@ -60,8 +60,33 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
 - `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
+- `apidoc.ps1`: `lib/*.ps1` のヘッダ・公開関数を抽出して `booch-win help` を組み立てる
 
 個人・環境固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
+
+## API を引く（`booch-win help`）
+
+各 `lib/*.ps1` の公開 API は、ソースを開かずに補助 CLI `bin/booch-win.ps1` で確認できます
+（Linux 側 booch の `booch help` に対応）。出力はソース（冒頭ヘッダ＋トップレベル関数）から
+生成するので、別途 API doc をメンテしません。
+
+```powershell
+./bin/booch-win.ps1 help            # モジュール一覧（name + 1 行説明）
+./bin/booch-win.ps1 help winget     # winget.ps1 のヘッダ全文 + 公開関数シグネチャ
+./bin/booch-win.ps1 help sync
+./bin/booch-win.ps1 version         # バージョン（VERSION ファイル）
+```
+
+help がそのまま API doc になるよう、`lib/*.ps1` を足す・変える際は次を守ります。
+
+- **ファイル冒頭ヘッダの最初の非空行を、自己完結した 1 行説明にする**（`lib/<name>.ps1: 概要` の
+  形式。索引に出る）。
+- **公開したい処理はトップレベル関数**にする（PowerShell は dot-source で全関数が見えるため、
+  prefix ではなくトップレベルかどうかで公開面を判断する。関数内のネスト定義は help に出ない）。
+- 型制約付き引数は `[type]$name` として自動併記される。
+
+新しい `lib/*.ps1` を足せば `booch-win help` に自動で載ります（登録簿の更新は不要）。抽出規約の
+詳細は `lib/apidoc.ps1` の冒頭コメントを正本にします。
 
 ## 開発・テスト
 
@@ -70,7 +95,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
   ```powershell
   Invoke-Pester -Path ./tests
-  $paths = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' | ForEach-Object FullName); foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
+  $paths = @('./win.ps1') + @(Get-ChildItem ./lib, ./bin -Filter '*.ps1' | ForEach-Object FullName); foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
   ```
 
 - **Tier2（手動・実環境）**: 実 winget・実認証・実 clone までのスモークは使い捨ての

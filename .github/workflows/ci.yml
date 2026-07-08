@@ -15,7 +15,7 @@ jobs:
       - name: Syntax parse (PowerShell AST)
         shell: pwsh
         run: |
-          $files = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          $files = @('./win.ps1') + @(Get-ChildItem ./lib, ./bin -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
           foreach ($file in $files) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -MinimumVersion 1.21.0 -Force -Scope CurrentUser
-          $paths = @('./win.ps1') + @(Get-ChildItem ./lib -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          $paths = @('./win.ps1') + @(Get-ChildItem ./lib, ./bin -Filter '*.ps1' -ErrorAction SilentlyContinue | ForEach-Object FullName)
           $issues = foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
           $issues | Format-Table -AutoSize
           if ($issues | Where-Object Severity -eq 'Error') { exit 1 }
