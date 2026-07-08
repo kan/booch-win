@@ -1,0 +1,38 @@
+#!/bin/bash
+# dotfiles-win: PowerShell 本体 (dotfiles-win.ps1) のラッパー
+#
+# git bash から呼ばれた場合に powershell.exe へ委譲する。Git for Windows の
+# アップデートはこの git bash プロセスがファイルロックを握って失敗しうるため、
+# 環境変数 DOTFILES_WIN_FROM_BASH=1 で PowerShell 側に通知する (その手の更新を
+# スキップさせたいときに参照する)。通常は ~/.local/bin/dotfiles-win として PATH に置く。
+
+set -e
+
+_resolve_ps_script() {
+    local script_dir
+    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    if [[ -f "$script_dir/dotfiles-win.ps1" ]]; then
+        echo "$script_dir/dotfiles-win.ps1"
+        return
+    fi
+    if [[ -f "$HOME/dotfiles/setup-win/dotfiles-win.ps1" ]]; then
+        echo "$HOME/dotfiles/setup-win/dotfiles-win.ps1"
+        return
+    fi
+    return 1
+}
+
+PS_SCRIPT="$(_resolve_ps_script)" || {
+    echo "Error: dotfiles-win.ps1 が見つかりません" >&2
+    exit 1
+}
+
+if ! command -v cygpath >/dev/null 2>&1; then
+    echo "Error: cygpath がありません。Git Bash で実行してください。" >&2
+    exit 1
+fi
+
+WIN_PATH="$(cygpath -w "$PS_SCRIPT")"
+
+export DOTFILES_WIN_FROM_BASH=1
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WIN_PATH" "$@"

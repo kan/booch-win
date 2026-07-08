@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Added
+- `booch-win scaffold <kind> -Path <dir> [-Force]`（`lib/scaffold.ps1` + `templates/`）で
+  booch-win を使う dotfiles-win リポジトリの最小雛形を生成する。生成物は冪等（既存は上書き
+  しない）で、submodule 追加などの手順は生成される README に案内する。
+
 ## [0.1.0] - 2026-07-08
 
 最初のリリース。

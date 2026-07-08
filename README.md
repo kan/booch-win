@@ -62,6 +62,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
 - `apidoc.ps1`: `lib/*.ps1` のヘッダ・公開関数を抽出して `booch-win help` を組み立てる
 - `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
+- `scaffold.ps1`: booch-win を使う repo の雛形を `templates/` から生成する
 
 個人・環境固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
 
@@ -121,6 +122,24 @@ help がそのまま API doc になるよう、`lib/*.ps1` を足す・変える
 - **Tier2（手動・実環境）**: 実 winget・実認証・実 clone までのスモークは使い捨ての
   Windows Sandbox で行う。手順は [`tests/sandbox/manual-smoke.md`](tests/sandbox/manual-smoke.md)。
   ホスト型 CI は winget 不在・対話認証・UAC のため不可。
+
+## 雛形を生成する（`booch-win scaffold`）
+
+booch-win を使う新しい dotfiles-win リポジトリの骨組みを生成できる（Linux 側 booch の
+`booch init` に対応）。生成物は `templates/dotfiles-win/` の複製で、**既存ファイルは上書き
+しない**（冪等。`-Force` で上書き）。git は触らないので、submodule 追加などは生成された
+README の手順に従う。
+
+```powershell
+./bin/booch-win.ps1 scaffold dotfiles-win -Path C:\path\to\new-dotfiles
+```
+
+生成される最小構成（`setup-win/{dotfiles-win.ps1, dotfiles-win.config.ps1, dotfiles-win,
+dotfiles-win.cmd}` ＋ `README.md` ＋ `.gitattributes`）。生成直後に booch-win を
+`vendor/booch-win` へ submodule 追加すれば `setup-win/dotfiles-win.ps1 help` / `doctor` が
+動く（開発中は `BOOCH_WIN_ROOT` で booch-win の場所を明示してもよい）。生成される
+`dotfiles-win.ps1` は「booch-win を解決して lib をロードし、config を読んで dispatch する」
+最小スケルトンで、`setup` / `sync` は用途に合わせて肉付けする前提（TODO コメントあり）。
 
 ## リリース
 

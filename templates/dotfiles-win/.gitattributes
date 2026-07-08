@@ -1,0 +1,5 @@
+# 改行は LF 固定（PS5.1 のファイル直実行 / shebang を環境差で壊さないため）
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=lf
+*.md  text eol=lf
