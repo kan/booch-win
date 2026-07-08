@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Added
+- `Invoke-BoochWinCleanup`（`lib/cleanup.ps1`）: 一時ファイル / npm・go キャッシュ / Tauri
+  target / WSL vhdx 最適化の掃除を Mode（light|full）と opt-in フラグ（-CleanTauri /
+  -CompactVhdx）で行う。消費側（dotfiles-win）の `Invoke-Cleanup` はモード検証とタイトルを
+  出してこれへ委譲する薄いラッパーになる。
+
 ## [0.2.0] - 2026-07-08
 
 ### Added
