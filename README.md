@@ -122,6 +122,22 @@ help がそのまま API doc になるよう、`lib/*.ps1` を足す・変える
   Windows Sandbox で行う。手順は [`tests/sandbox/manual-smoke.md`](tests/sandbox/manual-smoke.md)。
   ホスト型 CI は winget 不在・対話認証・UAC のため不可。
 
+## リリース
+
+バージョンの正本はルートの [`VERSION`](VERSION)（SemVer 1 行）。`booch-win version` と git タグ
+`v<...>` をこれに一致させる。リリースは GitHub Releases（タグ + ノート）で行い、配布は
+clone / submodule（tarball は付けない）。**消費側（dotfiles-win）は submodule をリリースタグに
+pin する**（`vendor/booch-win` を新タグへ進めてコミット）。
+
+手順（バージョン bump は勝手に行わない。指示があってから）:
+
+1. `VERSION` を上げる（SemVer）。`booch-win version` が新版を返すことを確認。
+2. `CHANGELOG.md` の `[Unreleased]` を新バージョンの節へ繰り上げ、日付と比較リンクを付ける。
+3. 変更をコミット（日本語メッセージ。bump とノートを含む）。
+4. タグを打って push: `git tag v0.1.0 && git push origin v0.1.0`。
+5. リリース作成: `gh release create v0.1.0 --title v0.1.0 --notes "<CHANGELOG の当該節>"`。
+6. 消費側の pin を更新（dotfiles の `vendor/booch-win` を新タグへ）。
+
 ## 将来
 
 dotfiles-win のオーケストレーション（setup / doctor / sync / cleanup の組み立て）は段階的に dotfiles 側からこちらへ寄せる。まずは `lib/*.ps1` を公開基盤として切り出し、dotfiles 側は config とエントリに集中させる。
