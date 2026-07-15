@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-15
+
+### Added
+- `Invoke-BoochWinAutoremove`（`lib/autoremove.ps1`）: 宣言（消費側の `$ClaudePlugins` /
+  `$ClaudeMarketplaces` / `$CodexSkillsFromMarketplace`）から外れた Claude プラグイン /
+  marketplace / marketplace clone 残渣 / codex skill を洗い出し、一覧提示 → 確認 → 削除する
+  手動オーケストレーション。`-DryRun` / `-AssumeYes` に対応。plan 算出（`Get-BoochWinAutoremovePlan`）
+  と適用（`Invoke-BoochWinAutoremoveOne`）はシームとして分離し、消費側 doctor が plan だけを
+  引いて可視化できる。MCP / `$SyncPairs` は Windows では宣言が空 / 実体コピーで残骸を安全に
+  判別できないため対象外。Linux 側 `dotfiles autoremove` と対称。
+
 ## [0.3.0] - 2026-07-08
 
 ### Added
@@ -40,7 +51,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kan/booch-win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kan/booch-win/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kan/booch-win/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kan/booch-win/releases/tag/v0.1.0

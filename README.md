@@ -54,6 +54,8 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 - `common.ps1`: 表示・共通実行ヘルパー
 - `sync.ps1`: repo ↔ 配備先の同期エンジン
+- `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除
+- `autoremove.ps1`: 宣言から外れた Claude プラグイン / marketplace / codex skill の掃除
 - `winget.ps1`: winget 呼び出し・導入判定・追跡外監査
 - `doctor.ps1`: doctor 表示フレーム
 - `download.ps1` / `github.ps1`: ダウンロード・GitHub Releases 取得
