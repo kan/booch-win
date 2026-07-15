@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-15
+
+### Added
+- `Invoke-BoochWinWorktreePrune`（`lib/cleanup.ps1`）: 指定した各 git repo で `git worktree prune`
+  を回し、実体が消えた worktree の登録メタだけを掃除する（冪等・安全。実在 worktree は消さない）。
+  git 不在・非 git ディレクトリはスキップ。どの repo を対象にするかは消費側が渡す。Linux 側 booch
+  の `booch_cleanup_worktree_prune` と対称（消費側 dotfiles-win.ps1 の自己完結実装を booch-win へ寄せた）。
+
 ## [0.4.0] - 2026-07-15
 
 ### Added
@@ -51,7 +59,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kan/booch-win/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kan/booch-win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kan/booch-win/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kan/booch-win/compare/v0.1.0...v0.2.0

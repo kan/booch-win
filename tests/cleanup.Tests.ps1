@@ -61,3 +61,37 @@ Describe 'Invoke-BoochWinCleanup' {
         { Invoke-BoochWinCleanup -Mode 'bogus' } | Should -Throw
     }
 }
+
+Describe 'Invoke-BoochWinWorktreePrune' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}
+    }
+
+    It '実体が消えた worktree の登録メタだけを prune する' {
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            Set-ItResult -Skipped -Because 'git が無い環境'
+            return
+        }
+        $repo = Join-Path $TestDrive ('r_' + [guid]::NewGuid().ToString('N'))
+        $wt   = Join-Path $TestDrive ('w_' + [guid]::NewGuid().ToString('N'))
+        git init -q $repo
+        git -C $repo -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+        git -C $repo worktree add -q $wt 2>$null
+        Remove-Item -Recurse -Force $wt          # 実体を消す (登録メタは残り prunable)
+        (@(git -C $repo worktree list)).Count | Should -Be 2
+        Invoke-BoochWinWorktreePrune -Repos @($repo)
+        (@(git -C $repo worktree list)).Count | Should -Be 1
+    }
+
+    It 'git 不在ならスキップして落ちない' {
+        Mock Test-Cmd { $false }
+        { Invoke-BoochWinWorktreePrune -Repos @('x') } | Should -Not -Throw
+    }
+
+    It '非 git ディレクトリはスキップして落ちない' {
+        Mock Test-Cmd { $true }
+        $d = Join-Path $TestDrive ('n_' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+        { Invoke-BoochWinWorktreePrune -Repos @($d) } | Should -Not -Throw
+    }
+}

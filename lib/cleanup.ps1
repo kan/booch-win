@@ -1,10 +1,12 @@
 ﻿#Requires -Version 5.1
 #
-# lib/cleanup.ps1: 汎用機構 — 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除
+# lib/cleanup.ps1: 汎用機構 — 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除、放置 git worktree の prune
 #
 # dotfiles-win.ps1 から dot-source される。消費側は Mode (light|full) と破壊的処理の
 # opt-in フラグ (-CleanTauri / -CompactVhdx) を渡すだけ。Tauri/WSL の実処理ヘルパーは
-# lib/system.ps1 (Clear-TauriTargets / Get-WslVhdxPath)。Linux 側 booch の lib/cleanup.sh に対応。
+# lib/system.ps1 (Clear-TauriTargets / Get-WslVhdxPath)。放置 worktree の prune は
+# Invoke-BoochWinWorktreePrune (どの repo を対象にするかは消費側が渡す)。Linux 側 booch の
+# lib/cleanup.sh (booch_cleanup_worktree_prune 含む) に対応。
 
 # 掃除本体。表示は従来 dotfiles-win.ps1 の Invoke-Cleanup と同一 (タイトル行は消費側が出す)。
 #   light: 7 日より古い一時ファイルのみ (引数なし setup からも回る軽量掃除)。
@@ -101,4 +103,22 @@ function Invoke-BoochWinCleanup {
 
     Write-Host ''
     Write-Host 'Cleanup complete.'
+}
+
+# 指定した各 git repo で `git worktree prune` を回す。実体が消えた worktree の登録メタだけを
+# 掃除する (冪等・安全。実在する worktree は消さない)。git 不在・非 git ディレクトリはスキップ。
+# 何の repo を対象にするかは消費側が決める (dotfiles-win.config.ps1 の $WorktreePruneRepos 等)。
+# Linux 側 booch の booch_cleanup_worktree_prune と対称。
+function Invoke-BoochWinWorktreePrune {
+    param([string[]]$Repos = @())
+    if (-not (Test-Cmd 'git')) {
+        Write-Info 'git 不在のため worktree prune をスキップ'
+        return
+    }
+    foreach ($repo in ($Repos | Select-Object -Unique)) {
+        if (-not $repo -or -not (Test-Path (Join-Path $repo '.git'))) { continue }
+        Write-Info "git worktree prune: $repo"
+        Invoke-Quiet { & git -C $repo worktree prune -v 2>&1 | ForEach-Object { Write-Host "    $_" } }
+    }
+    Write-Ok 'git worktree のメタ掃除を実行しました'
 }
