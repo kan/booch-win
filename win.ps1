@@ -6,9 +6,14 @@
     git すら無い Windows から「dotfiles-win setup が走る状態」までを 1 コマンドで持っていく。
     winget で git / gh を入れ、gh のブラウザ認証で private repo を clone し、本体へ委譲する。
 
-    対象の dotfiles リポジトリ (owner/name) は利用者が指定する。booch-win は汎用ツールなので
-    特定リポジトリを既定に埋め込まない。環境変数 BOOCH_WIN_REPO か -Repo で渡す（未指定なら
-    エラー終了）。irm | iex では引数を渡せないため、env での指定を主経路とする。
+    設定はすべて環境変数で渡す（下記）。booch-win は汎用ツールなので特定リポジトリを
+    既定に埋め込まない。param ブロックを持たないのは、Windows PowerShell 5.1 の
+    `irm | iex`（文字列を Invoke-Expression で評価）が、版によって先頭の param(...) /
+    [CmdletBinding()] をパースエラー（「予期しない属性」「代入式が無効」）にするため。
+    env だけで動かせば、どの 5.1 ビルドでも irm|iex が確実に通る。
+
+      BOOCH_WIN_REPO   取り込む dotfiles (owner/name)。必須（未指定なら明示エラー）
+      BOOCH_WIN_DIR    clone 先（既定: ~/dotfiles）
 
     Windows PowerShell 5.1 で動く構文に限定する（素の環境に pwsh は無い）。
     冪等: 各ステップ「無ければ入れる / 既存なら pull」。
@@ -18,23 +23,20 @@
     irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Repo 'youraccount/dotfiles' -Dir 'D:\dev\dotfiles'
+    # clone 先も変える場合
+    $env:BOOCH_WIN_REPO = 'youraccount/dotfiles'; $env:BOOCH_WIN_DIR = 'D:\dev\dotfiles'
+    irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 .NOTES
     STATUS: スケルトン（未検証）。クリーンに近い環境でのスモークは #7 で実施する。
 #>
-# [CmdletBinding()] は付けない。Windows PowerShell 5.1 の `irm | iex`（文字列を
-# Invoke-Expression で評価）では、先頭に来る [CmdletBinding()] 属性が
-# 「予期しない属性」パースエラーになるため（scriptblock/-File 実行では問題ないが、
-# 主経路の irm|iex を優先する）。param ブロック自体は iex でも解釈される。
-param(
-    [string]$Dir  = (Join-Path $HOME 'dotfiles'),
-    # 対象 dotfiles (owner/name)。汎用ツールなので個人リポジトリを既定に埋め込まず、
-    # 環境変数 BOOCH_WIN_REPO を既定に採る（未設定なら空 → Invoke-Main で明示エラー）。
-    [string]$Repo = $env:BOOCH_WIN_REPO,
-    # テスト用: 関数定義だけ読み込み、末尾の main を実行しない（Pester が dot-source する）。
-    [switch]$NoRun
-)
+# 設定は環境変数で受ける（param ブロックを持たない）。理由は上のヘルプ参照 — PS5.1 の
+# irm|iex は版によって先頭 param(...) をパースできず「代入式が無効」等で落ちるため、
+# param に依存せず env だけで動かす。
+$Dir   = if ($env:BOOCH_WIN_DIR) { $env:BOOCH_WIN_DIR } else { Join-Path $HOME 'dotfiles' }
+$Repo  = $env:BOOCH_WIN_REPO
+# BOOCH_WIN_NORUN=1 なら main を実行せず関数定義だけ読み込む（Pester が dot-source する用）。
+$NoRun = ($env:BOOCH_WIN_NORUN -eq '1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -134,7 +136,7 @@ function Invoke-DotfilesWin {
 function Invoke-Main {
     param([string]$RepoSlug, [string]$Target)
     if (-not $RepoSlug) {
-        throw '対象 dotfiles リポジトリが未指定です。環境変数 BOOCH_WIN_REPO=<owner>/<name> を設定するか -Repo で渡してください。'
+        throw '対象 dotfiles リポジトリが未指定です。環境変数 BOOCH_WIN_REPO=<owner>/<name> を設定してから実行してください。'
     }
     Write-Host ''
     Write-Host 'booch-win bootstrap' -ForegroundColor Magenta
@@ -152,7 +154,7 @@ function Invoke-Main {
     Write-Ok 'bootstrap 完了'
 }
 
-# -NoRun のときは関数定義だけ読み込む（Pester から dot-source してテストする用）。
+# BOOCH_WIN_NORUN=1 のときは関数定義だけ読み込む（Pester から dot-source してテストする用）。
 if (-not $NoRun) {
     Invoke-Main -RepoSlug $Repo -Target $Dir
 }

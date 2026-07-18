@@ -31,18 +31,23 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 5. private な dotfiles を clone（既存なら pull）
 6. `setup-win/dotfiles-win.ps1 setup` へ委譲（winget 群導入・設定同期・UAC 昇格は dotfiles-win 本体が担う）
 
-### パラメータ付きで使う
+### 設定（環境変数）
 
-環境変数ではなく明示的にパラメータを渡したい場合は、スクリプトを変数に取り込んで呼ぶ:
+設定はすべて環境変数で渡す。win.ps1 は **param ブロックを持たない** — Windows PowerShell 5.1 の
+`irm | iex`（文字列を Invoke-Expression で評価）は版によって先頭の `param(...)` を解釈できず
+「代入式が無効」等のパースエラーになるため、env だけで動かしてどの 5.1 でも確実に通す。
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Repo 'youraccount/dotfiles' -Dir 'C:\path\to\dotfiles'
+$env:BOOCH_WIN_REPO = 'youraccount/dotfiles'   # 必須
+$env:BOOCH_WIN_DIR  = 'C:\path\to\dotfiles'    # 任意（既定は %USERPROFILE%\dotfiles）
+irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 ```
 
-| パラメータ | 既定 | 説明 |
+| 環境変数 | 既定 | 説明 |
 |---|---|---|
-| `-Dir`  | `$HOME\dotfiles` | dotfiles の clone 先 |
-| `-Repo` | `$env:BOOCH_WIN_REPO` | clone 対象リポジトリ（`owner/name`）。未指定ならエラー終了 |
+| `BOOCH_WIN_REPO` | （なし） | clone 対象リポジトリ（`owner/name`）。未指定ならエラー終了 |
+| `BOOCH_WIN_DIR`  | `$HOME\dotfiles` | dotfiles の clone 先 |
+| `BOOCH_WIN_NORUN` | （なし） | `1` で main を実行せず関数だけ読み込む（テスト用） |
 
 ## 設計上の注意
 

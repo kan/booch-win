@@ -11,8 +11,13 @@ BeforeAll {
     function gh { }
     function git { }
 
-    # main を実行せず関数定義だけ読み込む。
-    . $script:WinPs1 -NoRun
+    # main を実行せず関数定義だけ読み込む（win.ps1 は param を持たず env で制御する）。
+    $env:BOOCH_WIN_NORUN = '1'
+    . $script:WinPs1
+}
+
+AfterAll {
+    Remove-Item Env:\BOOCH_WIN_NORUN -ErrorAction SilentlyContinue
 }
 
 Describe 'Test-Command' {

@@ -75,8 +75,9 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 `win.ps1` を Sandbox 内で直接実行できる:
 
 ```powershell
-& C:\booch-win\win.ps1 -Repo youraccount/dotfiles              # 既定 Dir（$HOME\dotfiles）
-& C:\booch-win\win.ps1 -Repo youraccount/dotfiles -Dir C:\dot
+$env:BOOCH_WIN_REPO = 'youraccount/dotfiles'   # 設定は env（win.ps1 は param を持たない）
+# $env:BOOCH_WIN_DIR = 'C:\dot'                 # 任意（既定は %USERPROFILE%\dotfiles）
+& C:\booch-win\win.ps1
 ```
 
 ## 後始末
