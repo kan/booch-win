@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     booch-win bootstrap: 素の Windows から private dotfiles を入れ、dotfiles-win setup を起動する。
 
