@@ -134,3 +134,18 @@ Describe 'Invoke-Main' {
     }
 }
 
+Describe 'Invoke-Native' {
+    # PS5.1 で Stop のまま native が stderr に書くと terminating になる問題への継ぎ目。
+    It '実行中は Continue に緩め、後で元へ戻す' {
+        $ErrorActionPreference = 'Stop'
+        $inside = Invoke-Native { $ErrorActionPreference }
+        $inside | Should -Be 'Continue'
+        $ErrorActionPreference | Should -Be 'Stop'
+    }
+    It '例外時も ErrorActionPreference を復元する' {
+        $ErrorActionPreference = 'Stop'
+        { Invoke-Native { throw 'x' } } | Should -Throw
+        $ErrorActionPreference | Should -Be 'Stop'
+    }
+}
+

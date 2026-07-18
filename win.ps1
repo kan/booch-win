@@ -48,6 +48,18 @@ function Write-Warn { param([string]$Msg) Write-Host "  [!] $Msg"  -ForegroundCo
 # コマンド存在判定の継ぎ目（テストでモックしやすいよう関数化）。
 function Test-Command { param([string]$Name) [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 
+# native コマンド（winget / gh / git / powershell）実行の継ぎ目。PS5.1 では
+# $ErrorActionPreference='Stop' のまま native が stderr に書くと、2>$null を付けても
+# NativeCommandError で terminating になり、$LASTEXITCODE を見る前に落ちる
+# （例: 未ログイン時の gh auth status の stderr）。実行中だけ Continue に緩める。
+# 成否は $LASTEXITCODE で見る（グローバルなので呼び出し後も参照できる）。
+function Invoke-Native {
+    param([Parameter(Mandatory)][scriptblock]$Script)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Script } finally { $ErrorActionPreference = $prev }
+}
+
 # --- 1. 前提整備 ------------------------------------------------------------
 function Initialize-Prereq {
     # PS5.1 の既定は TLS1.0/1.1 のことがあり GitHub 等への接続が失敗する。
@@ -76,7 +88,7 @@ function Install-IfMissing {
     Write-Step "Installing $Label ($WingetId)..."
     # winget の既定スコープに任せる。Git.Git はマシンスコープのインストーラのため
     # ここで UAC が出ることがある（GitHub.cli は user スコープで完結しやすい）。
-    & winget install -e --id $WingetId --accept-source-agreements --accept-package-agreements --silent
+    Invoke-Native { & winget install -e --id $WingetId --accept-source-agreements --accept-package-agreements --silent }
     if ($LASTEXITCODE -ne 0) { throw "$Label のインストールに失敗しました (winget exit $LASTEXITCODE)" }
 }
 
@@ -90,10 +102,10 @@ function Update-SessionPath {
 
 # --- 4. GitHub 認証 ---------------------------------------------------------
 function Connect-GitHub {
-    & gh auth status 2>$null | Out-Null
+    Invoke-Native { & gh auth status 2>$null | Out-Null }
     if ($LASTEXITCODE -eq 0) { Write-Ok 'gh already authenticated'; return }
     Write-Step 'GitHub 認証（ブラウザ/デバイスフロー）...'
-    & gh auth login --git-protocol https --web
+    Invoke-Native { & gh auth login --git-protocol https --web }
     if ($LASTEXITCODE -ne 0) { throw 'gh auth login に失敗しました' }
 }
 
@@ -102,20 +114,20 @@ function Get-Repo {
     param([string]$RepoSlug, [string]$Target)
     if (Test-Path (Join-Path $Target '.git')) {
         Write-Step "既存 repo を更新: $Target"
-        & git -C $Target pull --ff-only
+        Invoke-Native { & git -C $Target pull --ff-only }
     } else {
         Write-Step "clone $RepoSlug -> $Target"
         # `--` 以降は git clone へ転送される。委譲先 dotfiles-win.ps1 は
         # submodule (vendor/booch-win 等) を自前で取得せず、無ければ throw するため
         # clone 時に必ず recurse する。
-        & gh repo clone $RepoSlug $Target -- --recurse-submodules
+        Invoke-Native { & gh repo clone $RepoSlug $Target -- --recurse-submodules }
     }
     if ($LASTEXITCODE -ne 0) { throw "repo の取得に失敗しました ($RepoSlug)" }
     # submodule を初期化・更新する。clone は上で --recurse-submodules 済みなので
     # no-op、pull 経路 (既存 repo 更新) ではここが実質の取得になる。これが無いと
     # dotfiles-win.ps1 が booch-win を解決できず「booch-win が見つかりません」で止まる。
     Write-Step 'submodule を初期化・更新...'
-    & git -C $Target submodule update --init --recursive
+    Invoke-Native { & git -C $Target submodule update --init --recursive }
     if ($LASTEXITCODE -ne 0) { throw "submodule の取得に失敗しました ($RepoSlug)" }
 }
 
@@ -128,7 +140,7 @@ function Invoke-DotfilesWin {
     # .ps1 を直接 `&` で呼ぶとファイル実行扱いとなり ExecutionPolicy（既定 Restricted の
     # クライアントでは実行不可）に阻まれる。bootstrap 自体は irm|iex で免除されているが
     # 本体起動はプロセス限定の Bypass で確実に通す。
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $entry setup
+    Invoke-Native { & powershell -NoProfile -ExecutionPolicy Bypass -File $entry setup }
     if ($LASTEXITCODE -ne 0) { throw "dotfiles-win setup が失敗しました (exit $LASTEXITCODE)" }
 }
 
