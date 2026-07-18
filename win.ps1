@@ -93,9 +93,18 @@ function Get-Repo {
         & git -C $Target pull --ff-only
     } else {
         Write-Step "clone $RepoSlug -> $Target"
-        & gh repo clone $RepoSlug $Target
+        # `--` 以降は git clone へ転送される。委譲先 dotfiles-win.ps1 は
+        # submodule (vendor/booch-win 等) を自前で取得せず、無ければ throw するため
+        # clone 時に必ず recurse する。
+        & gh repo clone $RepoSlug $Target -- --recurse-submodules
     }
     if ($LASTEXITCODE -ne 0) { throw "repo の取得に失敗しました ($RepoSlug)" }
+    # submodule を初期化・更新する。clone は上で --recurse-submodules 済みなので
+    # no-op、pull 経路 (既存 repo 更新) ではここが実質の取得になる。これが無いと
+    # dotfiles-win.ps1 が booch-win を解決できず「booch-win が見つかりません」で止まる。
+    Write-Step 'submodule を初期化・更新...'
+    & git -C $Target submodule update --init --recursive
+    if ($LASTEXITCODE -ne 0) { throw "submodule の取得に失敗しました ($RepoSlug)" }
 }
 
 # --- 6. 本体へ委譲 ----------------------------------------------------------

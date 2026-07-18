@@ -95,11 +95,21 @@ Describe 'Get-Repo' {
         Should -Invoke gh  -Times 0
     }
 
-    It '.git が無ければ clone する' {
+    It '.git が無ければ clone する（submodule ごと）' {
         Mock Test-Path { $false }
         Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
         Should -Invoke gh  -Times 1 -ParameterFilter { $args -contains 'clone' }
-        Should -Invoke git -Times 0
+        Should -Invoke gh  -Times 1 -ParameterFilter { $args -contains '--recurse-submodules' }
+    }
+
+    It 'clone / pull いずれでも submodule update を実行する' {
+        Mock Test-Path { $false }
+        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Should -Invoke git -Times 1 -ParameterFilter { $args -contains 'submodule' }
+
+        Mock Test-Path { $true }
+        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Should -Invoke git -Times 2 -ParameterFilter { $args -contains 'submodule' }
     }
 }
 
