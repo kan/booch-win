@@ -42,6 +42,17 @@ function Add-UserPathEntry {
     return $true
 }
 
+# 現在のプロセスの PATH をレジストリ (Machine + User) から再合成する。winget は導入した
+# ツールのパスをレジストリの PATH には追加するが「実行中プロセスの PATH」は更新しないため、
+# 同じ run の後半で直前に winget 導入したツール (node/go/rustup/uv 等) を呼ぼうとすると
+# 見つからず失敗する。winget 導入フェーズ直後に本関数を呼べば、以降のステップから
+# 導入済みツールが見えるようになる (新規環境を 1 回の setup で完走させるための要)。
+function Update-SessionPath {
+    $machine = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+    $user    = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    $env:PATH = (@($machine, $user) | Where-Object { $_ }) -join ';'
+}
+
 # $Id のパッケージが winget 上に導入済みか判定する (--id + -e で ID 厳密一致)。
 # 出力は捨てて終了コードだけ見る (未導入なら NO_APPLICATIONS_FOUND で非 0)。
 # 出力を捕捉しない Invoke-Winget と違い、ここは表示不要なので捨ててよいが、EAP Stop の

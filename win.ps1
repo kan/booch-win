@@ -28,7 +28,8 @@
     irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 .NOTES
-    STATUS: スケルトン（未検証）。クリーンに近い環境でのスモークは #7 で実施する。
+    まっさらな Windows での実スモーク済み（irm|iex パース / BOM / native stderr / gh 認証 /
+    submodule clone / dotfiles-win 委譲まで PS5.1 実機で確認。2026-07）。
 #>
 # 設定は環境変数で受ける（param ブロックを持たない）。理由は上のヘルプ参照 — PS5.1 の
 # irm|iex は版によって先頭 param(...) をパースできず「代入式が無効」等で落ちるため、

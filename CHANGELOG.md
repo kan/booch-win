@@ -6,6 +6,30 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-19
+
+### Added
+- `Update-SessionPath`（`lib/winget.ps1`）: winget 導入後にレジストリ（Machine + User）から
+  実行中プロセスの PATH を再合成する。winget は導入ツールのパスを現プロセス PATH に反映しない
+  ため、同じ run の後半で直前に導入したツール（node/go/rustup/uv 等）が見つからず失敗するのを
+  防ぐ（新規環境を 1 回の setup で完走させるための要）。
+- `CLAUDE.md`: booch-win 自体の開発ルール（個人 dotfiles を持ち込まない等）。
+
+### Changed
+- `win.ps1`: 設定を環境変数（`BOOCH_WIN_REPO` 必須 / `BOOCH_WIN_DIR` / `BOOCH_WIN_NORUN`）で
+  受ける方式へ。param ブロック / `[CmdletBinding()]` を廃し、UTF-8 BOM も外した。個人リポジトリ
+  `kan/dotfiles` を既定に埋め込まず、対象 repo は利用者が指定する。
+- `win.ps1`: clone を `--recurse-submodules` にし、clone/pull 後に `git submodule update` を
+  実行する（委譲先 dotfiles-win.ps1 が booch-win submodule を要するため）。
+
+### Fixed
+- `irm | iex`（PS5.1）で `win.ps1` が起動できない問題。`Invoke-RestMethod` 評価では版によって
+  先頭の param / `[CmdletBinding()]`、および `irm` が除去しない UTF-8 BOM が「予期しない属性」
+  「代入式が無効」等のパースエラーになる。param 廃止・環境変数化・BOM 除去で解消（実機 PS5.1 で確認）。
+- `$ErrorActionPreference='Stop'` のまま native コマンド（gh/winget/git）が stderr に書くと
+  `NativeCommandError` で terminating になり `$LASTEXITCODE` を見る前に停止する問題を
+  `Invoke-Native` で回避（gh 未ログイン時の `gh auth status` で bootstrap が止まっていた）。
+
 ## [0.5.0] - 2026-07-15
 
 ### Added
@@ -59,7 +83,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kan/booch-win/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kan/booch-win/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kan/booch-win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kan/booch-win/compare/v0.2.0...v0.3.0
