@@ -3,7 +3,7 @@
 # lib/codex.ps1: 機構 — Codex CLI (GitHub Releases バイナリ) の導入
 #
 # dotfiles-win.ps1 から dot-source される。どの repo から入れるか ($CodexRepo)
-# は config。GitHub 最新タグ取得は lib/github.ps1。詳細は kan/dotfiles#6。
+# は config。GitHub 最新タグ取得は lib/github.ps1。
 
 # Codex CLI バイナリを GitHub releases の最新から ~/.local/bin へ配置する。
 function Install-Codex {

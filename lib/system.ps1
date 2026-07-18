@@ -2,7 +2,7 @@
 #
 # lib/system.ps1: 汎用機構 — タイムアウト/昇格/bin 配備/WSL・Tauri 掃除
 #
-# dotfiles-win.ps1 から dot-source される。詳細は kan/dotfiles#6。
+# dotfiles-win.ps1 から dot-source される。
 # $Script:DisableTimeout / $Script:SetupWinDir 等はエントリ側で定義される。
 # 注意: $PSCommandPath に依存する Get-DotfilesDir / Restart-Elevated は
 # 「本体スクリプト自身のパス」を要するためエントリに残している。

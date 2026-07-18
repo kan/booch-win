@@ -3,7 +3,7 @@
 # lib/go.ps1: 汎用機構 — go install によるツール導入
 #
 # dotfiles-win.ps1 から dot-source される。何を入れるか ($GoPackages) は
-# 個人選択なので dotfiles-win.config.ps1。詳細は kan/dotfiles#6。
+# 個人選択なので dotfiles-win.config.ps1。
 
 # go install <Package> でツールを導入/更新する。go が無ければ失敗を表示。
 function Install-GoPackage {

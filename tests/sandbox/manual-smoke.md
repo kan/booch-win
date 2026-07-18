@@ -2,7 +2,7 @@
 
 `win.ps1` の**実環境スモーク**（実 winget・実認証・実 clone まで）を、使い捨ての
 near-clean な Windows で行う手順。ホスト型 CI では winget 不在・対話認証・UAC 昇格のため
-不可能なので、ここを手動の正とする（背景は kan/dotfiles#7）。
+不可能なので、ここを手動の正とする。
 
 > 閉じれば全部消えるので、何度でもまっさらからやり直せる。
 
@@ -46,6 +46,7 @@ winget --version   # 出れば成功
 ## 3. ワンライナーを実行（公開版）
 
 ```powershell
+$env:BOOCH_WIN_REPO = 'youraccount/dotfiles'   # 対象 dotfiles を指定（未指定ならエラー終了）
 irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 ```
 
@@ -57,7 +58,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 | 2 | `git` / `gh` を winget 導入 | 既に無い前提。`--silent`。**Git.Git で UAC が出るか**を観察（要記録） |
 | 3 | PATH 再解決 | 直後に `git --version` / `gh --version` が通るか（"not found" にならないか） |
 | 4 | GitHub 認証 | `gh auth login --web` がブラウザ/コードを出すか。**Sandbox 内ブラウザで完遂できるか**を確認 |
-| 5 | clone or pull | `kan/dotfiles` が `$HOME\dotfiles` に入るか。再実行で pull になり壊れないか（冪等） |
+| 5 | clone or pull | `$env:BOOCH_WIN_REPO` の repo が `$HOME\dotfiles` に submodule ごと入るか。再実行で pull になり壊れないか（冪等） |
 | 6 | 委譲 | `dotfiles-win.ps1 setup` が起動するか。`powershell -ExecutionPolicy Bypass -File` 経由で実行できるか |
 
 ## 5. 記録すべき結果（#7 へフィードバック）
@@ -74,8 +75,8 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 `win.ps1` を Sandbox 内で直接実行できる:
 
 ```powershell
-& C:\booch-win\win.ps1            # 既定パラメータ
-& C:\booch-win\win.ps1 -Dir C:\dot -Repo kan/dotfiles
+& C:\booch-win\win.ps1 -Repo youraccount/dotfiles              # 既定 Dir（$HOME\dotfiles）
+& C:\booch-win\win.ps1 -Repo youraccount/dotfiles -Dir C:\dot
 ```
 
 ## 後始末

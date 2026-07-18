@@ -3,7 +3,7 @@
 # lib/common.ps1: 汎用機構 — 出力ヘルパーと共通ユーティリティ
 #
 # dotfiles-win.ps1 から dot-source される。個人固有の選択は含まない
-# (それは dotfiles-win.config.ps1)。関心の分離。詳細は kan/dotfiles#6。
+# (それは dotfiles-win.config.ps1)。関心の分離。
 
 # ============================================================
 # 出力ヘルパー

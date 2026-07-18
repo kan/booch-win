@@ -6,14 +6,19 @@
     git すら無い Windows から「dotfiles-win setup が走る状態」までを 1 コマンドで持っていく。
     winget で git / gh を入れ、gh のブラウザ認証で private repo を clone し、本体へ委譲する。
 
+    対象の dotfiles リポジトリ (owner/name) は利用者が指定する。booch-win は汎用ツールなので
+    特定リポジトリを既定に埋め込まない。環境変数 BOOCH_WIN_REPO か -Repo で渡す（未指定なら
+    エラー終了）。irm | iex では引数を渡せないため、env での指定を主経路とする。
+
     Windows PowerShell 5.1 で動く構文に限定する（素の環境に pwsh は無い）。
     冪等: 各ステップ「無ければ入れる / 既存なら pull」。
 
 .EXAMPLE
+    $env:BOOCH_WIN_REPO = 'youraccount/dotfiles'
     irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Dir 'D:\dev\dotfiles'
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Repo 'youraccount/dotfiles' -Dir 'D:\dev\dotfiles'
 
 .NOTES
     STATUS: スケルトン（未検証）。クリーンに近い環境でのスモークは #7 で実施する。
@@ -21,7 +26,9 @@
 [CmdletBinding()]
 param(
     [string]$Dir  = (Join-Path $HOME 'dotfiles'),
-    [string]$Repo = 'kan/dotfiles',
+    # 対象 dotfiles (owner/name)。汎用ツールなので個人リポジトリを既定に埋め込まず、
+    # 環境変数 BOOCH_WIN_REPO を既定に採る（未設定なら空 → Invoke-Main で明示エラー）。
+    [string]$Repo = $env:BOOCH_WIN_REPO,
     # テスト用: 関数定義だけ読み込み、末尾の main を実行しない（Pester が dot-source する）。
     [switch]$NoRun
 )
@@ -123,6 +130,9 @@ function Invoke-DotfilesWin {
 # --- main -------------------------------------------------------------------
 function Invoke-Main {
     param([string]$RepoSlug, [string]$Target)
+    if (-not $RepoSlug) {
+        throw '対象 dotfiles リポジトリが未指定です。環境変数 BOOCH_WIN_REPO=<owner>/<name> を設定するか -Repo で渡してください。'
+    }
     Write-Host ''
     Write-Host 'booch-win bootstrap' -ForegroundColor Magenta
     Write-Host ''

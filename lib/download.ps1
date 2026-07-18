@@ -2,7 +2,7 @@
 #
 # lib/download.ps1: 汎用機構 — ファイルダウンロード
 #
-# dotfiles-win.ps1 から dot-source される。詳細は kan/dotfiles#6。
+# dotfiles-win.ps1 から dot-source される。
 
 # 大きめのファイルを Uri から OutFile にダウンロードする。
 # Windows PowerShell 5.1 の Invoke-WebRequest -TimeoutSec は

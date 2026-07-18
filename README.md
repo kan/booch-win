@@ -13,9 +13,12 @@ Windows 開発環境のブートストラップを担う公開リポジトリ。
 
 ## 使い方（ワンライナー）
 
-git すら入っていない素の Windows で、PowerShell（管理者不要）から:
+git すら入っていない素の Windows で、PowerShell（管理者不要）から。対象の dotfiles
+リポジトリ（`owner/name`）は環境変数 `BOOCH_WIN_REPO` で渡す（`irm | iex` は引数を
+渡せないため env を使う。booch-win は汎用ツールなので特定リポジトリを既定に持たない）:
 
 ```powershell
+$env:BOOCH_WIN_REPO = 'youraccount/dotfiles'
 irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 ```
 
@@ -30,16 +33,16 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 ### パラメータ付きで使う
 
-`irm | iex` ではパラメータを渡せないため、明示指定したい場合はスクリプトを変数に取り込んで呼ぶ:
+環境変数ではなく明示的にパラメータを渡したい場合は、スクリプトを変数に取り込んで呼ぶ:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Dir 'C:\path\to\dotfiles' -Repo 'kan/dotfiles'
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1))) -Repo 'youraccount/dotfiles' -Dir 'C:\path\to\dotfiles'
 ```
 
 | パラメータ | 既定 | 説明 |
 |---|---|---|
 | `-Dir`  | `$HOME\dotfiles` | dotfiles の clone 先 |
-| `-Repo` | `kan/dotfiles`   | clone 対象リポジトリ（`owner/name`） |
+| `-Repo` | `$env:BOOCH_WIN_REPO` | clone 対象リポジトリ（`owner/name`）。未指定ならエラー終了 |
 
 ## 設計上の注意
 

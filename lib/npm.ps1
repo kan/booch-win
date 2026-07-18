@@ -3,7 +3,7 @@
 # lib/npm.ps1: 汎用機構 — npm global パッケージ導入
 #
 # dotfiles-win.ps1 から dot-source される。何を入れるか ($NpmGlobalPackages)
-# は個人選択なので dotfiles-win.config.ps1。詳細は kan/dotfiles#6。
+# は個人選択なので dotfiles-win.config.ps1。
 
 # npm で global にパッケージ群を導入/更新する。$VerifyCmd が導入後に
 # 解決できれば成功とみなす。node/npm は winget (OpenJS.NodeJS.LTS) で導入済み前提。

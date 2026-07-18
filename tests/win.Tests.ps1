@@ -90,25 +90,25 @@ Describe 'Get-Repo' {
 
     It '.git があれば pull する' {
         Mock Test-Path { $true }
-        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Get-Repo -RepoSlug 'youraccount/dotfiles' -Target (Join-Path $TestDrive 'dot')
         Should -Invoke git -Times 1 -ParameterFilter { $args -contains 'pull' }
         Should -Invoke gh  -Times 0
     }
 
     It '.git が無ければ clone する（submodule ごと）' {
         Mock Test-Path { $false }
-        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Get-Repo -RepoSlug 'youraccount/dotfiles' -Target (Join-Path $TestDrive 'dot')
         Should -Invoke gh  -Times 1 -ParameterFilter { $args -contains 'clone' }
         Should -Invoke gh  -Times 1 -ParameterFilter { $args -contains '--recurse-submodules' }
     }
 
     It 'clone / pull いずれでも submodule update を実行する' {
         Mock Test-Path { $false }
-        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Get-Repo -RepoSlug 'youraccount/dotfiles' -Target (Join-Path $TestDrive 'dot')
         Should -Invoke git -Times 1 -ParameterFilter { $args -contains 'submodule' }
 
         Mock Test-Path { $true }
-        Get-Repo -RepoSlug 'kan/dotfiles' -Target (Join-Path $TestDrive 'dot')
+        Get-Repo -RepoSlug 'youraccount/dotfiles' -Target (Join-Path $TestDrive 'dot')
         Should -Invoke git -Times 2 -ParameterFilter { $args -contains 'submodule' }
     }
 }
@@ -119,6 +119,13 @@ Describe 'Invoke-DotfilesWin' {
         Mock Write-Step { }
         { Invoke-DotfilesWin -Target (Join-Path $TestDrive 'dot') } |
             Should -Throw -ExpectedMessage '*setup-win/dotfiles-win.ps1*'
+    }
+}
+
+Describe 'Invoke-Main' {
+    It 'Repo 未指定なら（副作用の前に）throw する' {
+        { Invoke-Main -RepoSlug '' -Target (Join-Path $TestDrive 'dot') } |
+            Should -Throw -ExpectedMessage '*BOOCH_WIN_REPO*'
     }
 }
 

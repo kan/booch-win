@@ -4,7 +4,7 @@
 #
 # dotfiles-win.ps1 から dot-source される。どのフォントを入れるか ($Font:
 # Family / Repo / AssetPattern / TtfPattern) は個人選択なので
-# dotfiles-win.config.ps1。詳細は kan/dotfiles#6。
+# dotfiles-win.config.ps1。
 
 # per-user フォントの HKCU 登録先 (3 関数で共用)。
 $Script:FontRegPath = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'

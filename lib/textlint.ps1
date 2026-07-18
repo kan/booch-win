@@ -4,7 +4,7 @@
 #
 # dotfiles-win.ps1 から dot-source される。何を入れるか・どこへ置くか
 # ($Script:TextlintSrc / $Script:TextlintDest) は個人選択なので
-# dotfiles-win.config.ps1。詳細は kan/dotfiles#6。
+# dotfiles-win.config.ps1。
 #
 # feature-review スキル等は ~/.config/textlint-mcp-server/node_modules/.bin/textlint を
 # git bash 経由で直叩きする。Linux 版 setup/jobs.sh の job_textlint と同じ構成

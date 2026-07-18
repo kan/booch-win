@@ -3,7 +3,7 @@
 # lib/claude.ps1: 機構 — Claude Code 本体の導入とプラグイン有効化
 #
 # dotfiles-win.ps1 から dot-source される。どのプラグインを有効化するか
-# ($ClaudePlugins) は個人選択なので dotfiles-win.config.ps1。詳細は kan/dotfiles#6。
+# ($ClaudePlugins) は個人選択なので dotfiles-win.config.ps1。
 
 # Claude Code 本体を導入/更新する。導入済みなら claude update、失敗時や
 # 未導入時は npm でグローバル導入する (node/npm は winget で導入済み前提)。

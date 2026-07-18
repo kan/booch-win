@@ -2,7 +2,7 @@
 #
 # lib/github.ps1: 汎用機構 — GitHub Releases アクセス
 #
-# dotfiles-win.ps1 から dot-source される。詳細は kan/dotfiles#6。
+# dotfiles-win.ps1 から dot-source される。
 # $Script:ApiTimeoutSec / Get-EffectiveTimeout はエントリ側で定義される。
 # codex.ps1 (タグ) と font.ps1 (asset) の双方がここ経由で releases/latest を引く。
 
