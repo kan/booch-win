@@ -23,7 +23,10 @@
 .NOTES
     STATUS: スケルトン（未検証）。クリーンに近い環境でのスモークは #7 で実施する。
 #>
-[CmdletBinding()]
+# [CmdletBinding()] は付けない。Windows PowerShell 5.1 の `irm | iex`（文字列を
+# Invoke-Expression で評価）では、先頭に来る [CmdletBinding()] 属性が
+# 「予期しない属性」パースエラーになるため（scriptblock/-File 実行では問題ないが、
+# 主経路の irm|iex を優先する）。param ブロック自体は iex でも解釈される。
 param(
     [string]$Dir  = (Join-Path $HOME 'dotfiles'),
     # 対象 dotfiles (owner/name)。汎用ツールなので個人リポジトリを既定に埋め込まず、
