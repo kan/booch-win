@@ -70,6 +70,8 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
 - `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
+- `keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定
+- `wsl.ps1`: WSL2 とディストロの導入
 - `apidoc.ps1`: `lib/*.ps1` のヘッダ・公開関数を抽出して `booch-win help` を組み立てる
 - `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
 - `scaffold.ps1`: booch-win を使う repo の雛形を `templates/` から生成する

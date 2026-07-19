@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-19
+
+### Added
+- `lib/keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定。
+  `Get-ScancodeMapBytes` / `Test-ScancodeMapCurrent` / `Set-ScancodeMap` /
+  `Test-InputMethodCurrent` / `Set-InputMethod`。どのキーを入れ替えるか・どの入力方式にするかは
+  引数で受け取り、機構だけを持つ。既定入力方式の override も張る（張らないと言語リスト先頭が
+  既定になり、目的の入力方式が既定にならない）。
+- `lib/wsl.ps1`: WSL2 とディストロの導入。`Get-WslDistros`（UTF-16 出力の null を除去）/
+  `Install-WslDistro`（`already` / `needs-admin` / `installed` / `needs-restart` を返し、
+  次の手順の案内は消費側に任せる）。
+- `Copy-FilesIfChanged`（`lib/sync.ps1`）: repo 側が正本のファイル群を配置先へ一方向配置する
+  （内容が違うものだけコピーし、コピーしたファイル名を返す）。`$SyncPairs` の双方向同期と違い、
+  公開鍵や同梱データのような「配るだけ」の用途向け。
+- `Write-InfoLines`（`lib/common.ps1`）: 複数行テキスト（外部コマンドの出力など）を空行を除いて
+  `Write-Info` で 1 行ずつ出す。
+
 ## [0.5.1] - 2026-07-19
 
 ### Added
@@ -83,7 +100,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kan/booch-win/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kan/booch-win/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kan/booch-win/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kan/booch-win/compare/v0.3.0...v0.4.0

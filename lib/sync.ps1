@@ -11,6 +11,28 @@ function Test-FilesEqual {
     return (Get-FileHash $A).Hash -eq (Get-FileHash $B).Hash
 }
 
+# $SrcDir 直下のファイルを $DstDir へ一方向で配置する (内容が違うものだけコピー)。$SyncPairs の
+# 双方向同期と違い「repo 側が正本」の配布用 (公開鍵・同梱データなど)。配置先が無ければ作る。
+# コピーしたファイル名の配列を返す (表示や件数は呼び出し側が決める)。$SrcDir が無ければ空配列。
+function Copy-FilesIfChanged { # SrcDir DstDir [Filter]
+    param(
+        [Parameter(Mandatory)][string]$SrcDir,
+        [Parameter(Mandatory)][string]$DstDir,
+        [string]$Filter = '*'
+    )
+    if (-not (Test-Path $SrcDir)) { return @() }
+    if (-not (Test-Path $DstDir)) { New-Item -ItemType Directory -Force $DstDir | Out-Null }
+    $copied = @()
+    foreach ($f in Get-ChildItem -Path $SrcDir -Filter $Filter -File) {
+        $dst = Join-Path $DstDir $f.Name
+        if (-not (Test-Path $dst) -or -not (Test-FilesEqual $f.FullName $dst)) {
+            Copy-Item $f.FullName $dst -Force
+            $copied += $f.Name
+        }
+    }
+    return @($copied)
+}
+
 # ------------------------------------------------------------
 # SyncPairs の表示ラベル
 # doctor の config files 表示と setup 末尾の Invoke-Sync が同じ見た目に

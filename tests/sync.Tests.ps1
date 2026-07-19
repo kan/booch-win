@@ -108,3 +108,47 @@ Describe 'Invoke-BoochWinSync' {
         Should -Invoke Import-Pair -Times 0
     }
 }
+
+Describe 'Copy-FilesIfChanged (一方向配置)' {
+    BeforeEach {
+        $script:Src = Join-Path $TestDrive ('src_' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        $script:Dst = Join-Path $TestDrive ('dst_' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        New-Item -ItemType Directory -Force $script:Src | Out-Null
+    }
+
+    It '配置先が無ければ作って全部コピーする' {
+        Set-Content (Join-Path $script:Src 'a.pub') 'A' -NoNewline
+        Set-Content (Join-Path $script:Src 'b.pub') 'B' -NoNewline
+        $copied = Copy-FilesIfChanged $script:Src $script:Dst
+        @($copied).Count | Should -Be 2
+        (Get-Content (Join-Path $script:Dst 'b.pub') -Raw) | Should -Be 'B'
+    }
+
+    It '内容が同じなら再コピーしない (冪等)' {
+        Set-Content (Join-Path $script:Src 'a.pub') 'A' -NoNewline
+        [void](Copy-FilesIfChanged $script:Src $script:Dst)
+        $copied = Copy-FilesIfChanged $script:Src $script:Dst
+        @($copied).Count | Should -Be 0
+    }
+
+    It '内容が違うものだけ上書きする' {
+        Set-Content (Join-Path $script:Src 'a.pub') 'A' -NoNewline
+        Set-Content (Join-Path $script:Src 'b.pub') 'B' -NoNewline
+        [void](Copy-FilesIfChanged $script:Src $script:Dst)
+        Set-Content (Join-Path $script:Src 'b.pub') 'B2' -NoNewline
+        $copied = Copy-FilesIfChanged $script:Src $script:Dst
+        @($copied) | Should -Be @('b.pub')
+        (Get-Content (Join-Path $script:Dst 'b.pub') -Raw) | Should -Be 'B2'
+    }
+
+    It 'Filter で対象を絞れる' {
+        Set-Content (Join-Path $script:Src 'a.pub') 'A' -NoNewline
+        Set-Content (Join-Path $script:Src 'note.txt') 'N' -NoNewline
+        $copied = Copy-FilesIfChanged $script:Src $script:Dst -Filter '*.pub'
+        @($copied) | Should -Be @('a.pub')
+    }
+
+    It '元ディレクトリが無ければ空配列' {
+        (Copy-FilesIfChanged (Join-Path $TestDrive 'nope') $script:Dst).Count | Should -Be 0
+    }
+}

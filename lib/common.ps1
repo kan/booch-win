@@ -14,6 +14,12 @@ function Write-Ok   { param([string]$Msg) Write-Host '  ✓ ' -NoNewline -Foregr
 function Write-Warn { param([string]$Msg) Write-Host '  ! ' -NoNewline -ForegroundColor Yellow; Write-Host $Msg }
 function Write-Fail { param([string]$Msg) Write-Host '  ✗ ' -NoNewline -ForegroundColor Red;    Write-Host $Msg }
 
+# 複数行テキスト (外部コマンドの出力など) を、空行を除いて Write-Info で 1 行ずつ出す。
+function Write-InfoLines { # Text
+    param([string]$Text)
+    foreach ($l in ($Text -split "`r?`n" | Where-Object { $_.Trim() })) { Write-Info $l.Trim() }
+}
+
 function Write-Status {
     param(
         [string]$Label,
