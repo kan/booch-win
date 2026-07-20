@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-20
+
+### Added
+- `Update-ClaudeMarketplace`（`lib/claude.ps1`）: 登録済みの全 marketplace を最新化する
+  （`claude plugin marketplace update`）。`Add-ClaudeMarketplace` は「未登録なら add」しか
+  しないため、これが無いと marketplace の clone が追加時の版のまま古び、marketplace 側で
+  更新されたプラグイン（スキル・コマンド）が何度 setup を回しても降ってこない。Linux 版 booch の
+  `booch_claude_marketplace_update_all` と対になる。失敗は警告に留め、既存の clone のまま続行する。
+- `Get-ClaudePluginVersion`（`lib/claude.ps1`）: 導入済みプラグインの版を `claude plugin list` から
+  読む。`plugin@marketplace` の完全一致でブロックを特定するので、版行を持たないブロックで
+  次のプラグインの版を誤って拾わない。
+
+### Fixed
+- `Enable-ClaudePlugin`（`lib/claude.ps1`）が導入済みプラグインに何もせず、初回 install 時点の版で
+  凍結していた。導入済みなら `claude plugin update` をかけ、版が変わったときだけ updated と報告する
+  （Linux 版 booch の `booch_claude_plugin_ensure` と対）。update 失敗は致命でないので握る。
+
 ## [0.6.0] - 2026-07-19
 
 ### Added
@@ -100,7 +117,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/kan/booch-win/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kan/booch-win/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kan/booch-win/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kan/booch-win/compare/v0.4.0...v0.5.0

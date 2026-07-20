@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 #
-# lib/claude.ps1: 機構 — Claude Code 本体の導入とプラグイン有効化
+# lib/claude.ps1: 機構 — Claude Code 本体・marketplace・プラグインの導入と更新
 #
 # dotfiles-win.ps1 から dot-source される。どのプラグインを有効化するか
 # ($ClaudePlugins) は個人選択なので dotfiles-win.config.ps1。
@@ -70,6 +70,28 @@ function Show-ClaudePlugins {
     }
 }
 
+# 導入済みプラグインの版を返す (未導入・取得失敗なら空文字)。list の
+# 「❯ <plugin@marketplace>」行で対象ブロックに入り、そのブロック最初の Version: を読む。
+# 別の ❯ 行に入ったら解除するので、Version 行を持たないブロックで次のプラグインの版を
+# 誤って拾わない。$Plugin は plugin@marketplace の完全一致で照合する。
+function Get-ClaudePluginVersion {
+    param(
+        [Parameter(Mandatory)][string]$Plugin,   # plugin@marketplace
+        [string]$PluginList
+    )
+    if (-not $PluginList) { $PluginList = Get-ClaudePluginList }
+    if (-not $PluginList) { return '' }
+    $inBlock = $false
+    foreach ($line in ($PluginList -split "`r?`n")) {
+        if ($line -match '^\s*❯\s+(\S+)') {
+            $inBlock = ($Matches[1] -eq $Plugin)
+        } elseif ($inBlock -and $line -match '^\s*Version:\s*(\S+)') {
+            return $Matches[1]
+        }
+    }
+    return ''
+}
+
 # 渡された scriptblock を実行する間だけ、github SSH→HTTPS 書き換えの GIT_CONFIG_*
 # を環境変数に立てる (Linux job_claude と同じ手当て)。プラグイン/マーケットプレイスの
 # clone が github SSH (git@github.com:) になると、非対話では ssh.exe + 1Password で
@@ -120,11 +142,35 @@ function Add-ClaudeMarketplace {
     }
 }
 
-# Claude Code のプラグインを有効化する (claude-plugins-official は組込み
+# 登録済みの全 marketplace を最新化する (プラグイン有効化より前に呼ぶ)。
+#
+# Add-ClaudeMarketplace は「未登録なら add」しかしないので、これが無いと marketplace の
+# clone が追加時の版のまま古びる。marketplace 側で更新されたプラグイン (スキル・コマンド)
+# が、何度 setup を回しても永久に降ってこない状態になる。
+#
+# 失敗は致命でない (ネットワーク断でも既存の clone のまま続行できる) ので警告に留める。
+# clone の fetch を伴うため Invoke-WithGitHubHttps の下で実行する。
+function Update-ClaudeMarketplace {
+    if (-not (Test-Cmd 'claude')) { return }
+    Write-Info 'Updating Claude marketplaces...'
+    Invoke-WithGitHubHttps {
+        Invoke-Quiet { & claude plugin marketplace update 2>&1 | Out-Null }
+    }
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok 'Claude marketplaces: updated'
+    } else {
+        Write-Warn 'Claude marketplaces: update failed (既存の clone のまま続行します。ネットワーク / 認証を確認してください)'
+    }
+}
+
+# Claude Code のプラグインを有効化・更新する (claude-plugins-official は組込み
 # マーケットプレイスなので add 不要)。
 #   - 既にインストール済みかを先に判定し、未導入のときだけ install する。
 #     こうすることで install の非ゼロ終了を「既に有効」で握りつぶさず、
 #     本当の失敗 (ネットワーク不通 / 未認証 等) を Write-Fail で表面化できる。
+#   - 導入済みなら update をかける。install だけだと初回の版で凍結し、marketplace 側で
+#     更新されたプラグインが永久に降ってこない (Linux booch の booch_claude_plugin_ensure
+#     と対)。update 失敗は致命でないので握り、版が変わったときだけそう報告する。
 #   - $PluginList を渡すとその文字列で判定する (未指定なら都度取得)。
 # $ShortName は claude plugin list 上の表示名 (例: rust-analyzer-lsp)。
 function Enable-ClaudePlugin {
@@ -141,7 +187,20 @@ function Enable-ClaudePlugin {
     # エスケープしてメタ文字を無効化する。`^\s*` だと `❯ ` を越えられず常に不一致に
     # なる (= 毎回再 install を試みる) ため `^[^\w]*` を使う。
     if ($PluginList -match "(?m)^[^\w]*$([regex]::Escape($ShortName))\b") {
-        Write-Ok "$ShortName plugin: already enabled"
+        # 版は update の前後で取り直す ($PluginList は update 前のスナップショットなので、
+        # 後の版をそこから読むと必ず「変わっていない」になる)。
+        $old = Get-ClaudePluginVersion -Plugin $Plugin -PluginList $PluginList
+        Invoke-WithGitHubHttps {
+            Invoke-Quiet { & claude plugin update $Plugin 2>&1 | Out-Null }
+        }
+        $new = Get-ClaudePluginVersion -Plugin $Plugin
+        if ($old -and $new -and $old -ne $new) {
+            Write-Ok "$ShortName plugin: updated ($old -> $new)"
+        } elseif ($new) {
+            Write-Ok "$ShortName plugin: already enabled ($new)"
+        } else {
+            Write-Ok "$ShortName plugin: already enabled"
+        }
     } else {
         Write-Info "Enabling $ShortName plugin..."
         # 外部 marketplace のプラグインは clone を伴うため、github SSH→HTTPS 書き換えの
