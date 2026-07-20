@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-07-20
+
+### Added
+- `Remove-OutdatedFontFile`（`lib/font.ps1`）: このファミリ用に置いた ttf のうち、指定バージョンの
+  配置名でないものを消す。別名配置方式では旧版・旧命名の実体が宙に浮くため（実測 1 ファミリ 124MB）。
+  導入直後だけでなく「既に最新」の回にも呼べる — 導入時だけの掃除だと、そのとき使用中で消せな
+  かった分が次のリリースまで残り続けるため。掴まれていて消せないものは次回に回す。
+
 ## [0.6.5] - 2026-07-20
 
 ### Fixed
@@ -170,7 +178,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/kan/booch-win/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/kan/booch-win/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/kan/booch-win/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/kan/booch-win/compare/v0.6.2...v0.6.3

@@ -64,3 +64,36 @@ Describe 'Get-FontDestFileName (上書きを避ける配置名)' {
         $a | Should -Be $b
     }
 }
+
+Describe 'Remove-OutdatedFontFile (旧版の実体を掃除する)' {
+    BeforeEach {
+        $script:PrevLocalAppData = $env:LOCALAPPDATA
+        $env:LOCALAPPDATA = Join-Path $TestDrive ('lad2_' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        $script:FontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+        New-Item -ItemType Directory -Force $script:FontDir | Out-Null
+        foreach ($n in @(
+                'PlemolJPConsoleNF-Regular.ttf',          # 旧命名 (版を埋める前)
+                'PlemolJPConsoleNF-Regular_v2.0.0.ttf',   # 旧版
+                'PlemolJPConsoleNF-Regular_v3.0.0.ttf',   # 現行
+                'HackGenConsoleNF-Regular.ttf'            # 別ファミリ (触らない)
+            )) { Set-Content -LiteralPath (Join-Path $script:FontDir $n) -Value 'x' -NoNewline }
+    }
+    AfterEach { $env:LOCALAPPDATA = $script:PrevLocalAppData }
+
+    It '現行版と別ファミリを残し、旧版・旧命名だけ消す' {
+        $n = Remove-OutdatedFontFile -TtfPattern '^PlemolJPConsoleNF(-|$)' -Version 'v3.0.0'
+        $n | Should -Be 2
+        $names = @(Get-ChildItem -LiteralPath $script:FontDir -File | ForEach-Object { $_.Name } | Sort-Object)
+        $names | Should -Be @('HackGenConsoleNF-Regular.ttf', 'PlemolJPConsoleNF-Regular_v3.0.0.ttf')
+    }
+
+    It '再実行しても消すものが無ければ 0 (冪等)' {
+        [void](Remove-OutdatedFontFile -TtfPattern '^PlemolJPConsoleNF(-|$)' -Version 'v3.0.0')
+        Remove-OutdatedFontFile -TtfPattern '^PlemolJPConsoleNF(-|$)' -Version 'v3.0.0' | Should -Be 0
+    }
+
+    It '版が不明なら何もしない (何を残すべきか決められないため)' {
+        Remove-OutdatedFontFile -TtfPattern '^PlemolJPConsoleNF(-|$)' -Version '' | Should -Be 0
+        @(Get-ChildItem -LiteralPath $script:FontDir -File).Count | Should -Be 4
+    }
+}

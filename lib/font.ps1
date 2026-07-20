@@ -34,6 +34,35 @@ function Get-FontDestFileName {
     return ('{0}_{1}{2}' -f $base, $slug, $ext)
 }
 
+# このファミリ用に置いた ttf のうち、指定バージョンの配置名でないものを消す。
+#
+# 配置は上書きせず別名で行い、HKCU の登録値だけを差し替えるため、旧版・旧命名 (バージョンを
+# 埋める前の名前) の実体は宙に浮く。実測で 1 ファミリ 124MB あり、放置すると版ごとに積む。
+# 掴まれていて消せないものは次回に回す (害は容量だけ)。戻り値: 実際に消せた数。
+#
+# 導入直後だけでなく「既に最新」の回にも呼べるようにしてある — 導入時だけの掃除だと、
+# ロックで消せなかった分が次のリリースまで残り続けるため。
+function Remove-OutdatedFontFile {
+    param(
+        [Parameter(Mandatory)][string]$TtfPattern,   # このファミリの ttf を選ぶ正規表現
+        # 残す版 (例 v3.0.0)。空を許すのは、版が取れない回に呼び出し側が分岐せず渡せるように
+        # するため (空なら何を残すべきか決められないので、下で何もせず返す)。
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Version
+    )
+    if (-not $Version) { return 0 }
+    $userFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+    if (-not (Test-Path -LiteralPath $userFontDir)) { return 0 }
+    $slug = $Version -replace '[^\w.-]', '-'
+    $removed = 0
+    foreach ($f in @(Get-ChildItem -LiteralPath $userFontDir -Filter '*.ttf' -File -ErrorAction SilentlyContinue)) {
+        if ($f.BaseName -notmatch $TtfPattern) { continue }
+        if ($f.BaseName -like "*_$slug") { continue }
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $f.FullName)) { $removed++ }
+    }
+    return $removed
+}
+
 # 記録されている導入済みバージョン (記録が無ければ '')。
 function Get-FontInstalledVersion {
     param([Parameter(Mandatory)][string]$Family)
@@ -185,13 +214,11 @@ function Install-Font {
         # ので、フォント一覧に重複も出ない。旧ファイルはこの後の掃除で消す (掴まれていれば
         # 次回に回る)。
         $locked = @()
-        $installedPaths = @()
         foreach ($font in $fonts) {
             $destName = Get-FontDestFileName -SourceName $font.Name -Version ([string]$release.tag_name)
             $destPath = Join-Path $userFontDir $destName
             try {
                 Copy-Item $font.FullName -Destination $destPath -Force -ErrorAction Stop
-                $installedPaths += $destPath
             } catch {
                 # 同じ版を入れ直す場合など、配置先が既にあって掴まれているときはここへ来る。
                 # 置けたものは残し、置けなかったものを名指しで報告する (復旧しやすさ優先)。
@@ -218,15 +245,8 @@ function Install-Font {
                 $locked.Count, ($locked -join ', '))
         }
 
-        # 旧版・旧命名 (バージョンを埋める前の名前) のファイルを掃除する。レジストリは
-        # 新しいパスを指しているので実体は宙に浮いており、放置すると版ごとに数十 MB 積む。
-        # 掴まれていれば消せないが、それは次回に回してよい (害は容量だけ)。
-        # 対象は $TtfPattern に一致するファイル = このファミリのために置いたものだけ。
-        foreach ($old in @(Get-ChildItem -LiteralPath $userFontDir -Filter '*.ttf' -File -ErrorAction SilentlyContinue)) {
-            if ($old.BaseName -notmatch $TtfPattern) { continue }
-            if ($installedPaths -contains $old.FullName) { continue }
-            Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue
-        }
+        # 旧版・旧命名のファイルを掃除する (詳細は Remove-OutdatedFontFile)。
+        [void](Remove-OutdatedFontFile -TtfPattern $TtfPattern -Version ([string]$release.tag_name))
         # 版の記録は全ファイルを置けたときだけ。失敗を記録すると、次回「最新」と誤判定して
         # 中途半端な状態のまま固定されてしまう。
         if ($release.tag_name) {
