@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-20
+
+### Added
+- `Test-DirectoryInSync`（`lib/sync.ps1`）: ディレクトリ配下（再帰）のファイル一式が一致するかを
+  相対パス集合と内容の両方で判定する。実体コピーで配ったもの（`Copy-Item -Recurse` で配備した
+  スキル等）が配布元からずれていないかを診断するための判定。コピー方式は配布元が更新されても
+  配備先が黙って古いまま残るため、これが無いと「配るのに、配った結果は見ない」状態になる。
+
 ## [0.6.2] - 2026-07-20
 
 ### Added
@@ -135,7 +143,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/kan/booch-win/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/kan/booch-win/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/kan/booch-win/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kan/booch-win/compare/v0.5.1...v0.6.0

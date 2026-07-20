@@ -11,6 +11,32 @@ function Test-FilesEqual {
     return (Get-FileHash $A).Hash -eq (Get-FileHash $B).Hash
 }
 
+# ディレクトリ配下 (再帰) のファイル一式が一致するか。ファイルの相対パス集合と、各ファイルの
+# 内容の両方を見る。実体コピーで配る対象 (Copy-Item -Recurse で配備したスキル等) が配布元から
+# ずれていないかを診断するための判定で、片方が無ければ $false。
+#
+# 「配るのに、配った結果がずれていないかは見ない」状態を作らないために要る — コピー方式は
+# 配布元が更新されても配備先が黙って古いまま残るので、それを検出できるのは内容比較だけ。
+function Test-DirectoryInSync {
+    param(
+        [Parameter(Mandatory)][string]$SrcDir,
+        [Parameter(Mandatory)][string]$DstDir
+    )
+    if (-not (Test-Path -LiteralPath $SrcDir) -or -not (Test-Path -LiteralPath $DstDir)) { return $false }
+    $relOf = {
+        param($root, $file)
+        $file.FullName.Substring((Resolve-Path -LiteralPath $root).Path.Length).TrimStart('\')
+    }
+    $srcRel = @(Get-ChildItem -LiteralPath $SrcDir -Recurse -File | ForEach-Object { & $relOf $SrcDir $_ } | Sort-Object)
+    $dstRel = @(Get-ChildItem -LiteralPath $DstDir -Recurse -File | ForEach-Object { & $relOf $DstDir $_ } | Sort-Object)
+    # 大文字小文字は Windows のファイルシステムに合わせて無視する。
+    if (($srcRel -join '|') -ne ($dstRel -join '|')) { return $false }
+    foreach ($r in $srcRel) {
+        if (-not (Test-FilesEqual (Join-Path $SrcDir $r) (Join-Path $DstDir $r))) { return $false }
+    }
+    return $true
+}
+
 # $SrcDir 直下のファイルを $DstDir へ一方向で配置する (内容が違うものだけコピー)。$SyncPairs の
 # 双方向同期と違い「repo 側が正本」の配布用 (公開鍵・同梱データなど)。配置先が無ければ作る。
 # コピーしたファイル名の配列を返す (表示や件数は呼び出し側が決める)。$SrcDir が無ければ空配列。

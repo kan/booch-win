@@ -152,3 +152,43 @@ Describe 'Copy-FilesIfChanged (一方向配置)' {
         (Copy-FilesIfChanged (Join-Path $TestDrive 'nope') $script:Dst).Count | Should -Be 0
     }
 }
+
+Describe 'Test-DirectoryInSync (実体コピーの鮮度判定)' {
+    BeforeEach {
+        $script:Src = Join-Path $TestDrive ('dsrc_' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        $script:Dst = Join-Path $TestDrive ('ddst_' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        New-Item -ItemType Directory -Force (Join-Path $script:Src 'sub') | Out-Null
+        Set-Content (Join-Path $script:Src 'SKILL.md') 'body' -NoNewline
+        Set-Content (Join-Path $script:Src 'sub\extra.md') 'x' -NoNewline
+        Copy-Item -LiteralPath $script:Src -Destination $script:Dst -Recurse
+    }
+
+    It '再帰的に内容が一致していれば true' {
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir $script:Dst | Should -BeTrue
+    }
+
+    It '配布元だけ更新されていれば false (コピー方式が黙って古びるのを検出する)' {
+        Set-Content (Join-Path $script:Src 'SKILL.md') 'body2' -NoNewline
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir $script:Dst | Should -BeFalse
+    }
+
+    It '配布元にファイルが増えていれば false' {
+        Set-Content (Join-Path $script:Src 'NEW.md') 'n' -NoNewline
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir $script:Dst | Should -BeFalse
+    }
+
+    It '配備先に余計なファイルが残っていれば false' {
+        Set-Content (Join-Path $script:Dst 'stale.md') 's' -NoNewline
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir $script:Dst | Should -BeFalse
+    }
+
+    It '入れ子のファイルの差分も見る' {
+        Set-Content (Join-Path $script:Dst 'sub\extra.md') 'y' -NoNewline
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir $script:Dst | Should -BeFalse
+    }
+
+    It 'どちらかが存在しなければ false' {
+        Test-DirectoryInSync -SrcDir $script:Src -DstDir (Join-Path $TestDrive 'nope') | Should -BeFalse
+        Test-DirectoryInSync -SrcDir (Join-Path $TestDrive 'nope') -DstDir $script:Dst | Should -BeFalse
+    }
+}
