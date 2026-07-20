@@ -6,6 +6,24 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-20
+
+### Added
+- `Show-ToolList`（`lib/doctor.ps1`）が任意の `Latest`（最新版を返す scriptblock）を受け取り、
+  現在版と比較して注記を添えるようになった。`(update available: X)` /
+  `(latest: unknown)` / `(latest: X)`。遅れていても MISSING にはしない（可視化が目的）。
+  どのツールをどこと比較するかは消費側の config が持つ（機構と選択の分離。Linux の
+  `booch_doctor_tool` と prefetch URL の分担と同じ）。
+- `Get-VersionNumber` / `Get-VersionNote`（`lib/doctor.ps1`）: 版表記の正規化と注記の組み立て。
+- `Get-NpmLatestVersion`（`lib/npm.ps1`）: npm レジストリの dist-tag latest。スコープ付きも可。
+- `Get-GoModuleLatestVersion`（`lib/go.ps1`）: Go モジュールプロキシの最新 semver タグ。
+
+### Fixed
+- `Install-WingetPackages`（`lib/winget.ps1`）が upgrade の終了コードを捨てていたため、更新が
+  失敗し続けても setup ログに何も出なかった（install の失敗は `Write-Fail` していたので非対称）。
+  「適用できる更新が無い」（0x8A15002B）だけを成功扱いにし、それ以外の非 0 は警告として出す。
+  判定は `Test-WingetUpgradeNoop` に切り出した。
+
 ## [0.6.1] - 2026-07-20
 
 ### Added
@@ -117,7 +135,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/kan/booch-win/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/kan/booch-win/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kan/booch-win/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kan/booch-win/compare/v0.5.0...v0.5.1

@@ -128,6 +128,21 @@ function Show-WingetUntracked {
     foreach ($id in $untracked) { Write-Host "      $id" }
 }
 
+# upgrade の終了コードが「実行することが無かった (失敗ではない)」を意味するか。
+#
+# winget upgrade は対象が最新のときも非 0 を返す。それを一律に失敗として出すと毎回
+# ノイズになるので、既知の「何もすることが無い」コードだけを成功扱いにし、それ以外は
+# 呼び出し側が可視化できるようにする。
+#   0          : 実際に更新した
+#   0x8A15002B : APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE (適用できる更新が無い)
+#                実機確認: 最新の Git.Git への upgrade がこれを返す
+# 対象 ID が winget ソースと相関できない等は別コード (0x8A150014 など) になるので、
+# ここでは成功扱いにしない — 「追跡している ID が実は更新できない」を隠さないため。
+function Test-WingetUpgradeNoop {
+    param([Parameter(Mandatory)][int]$ExitCode)
+    return ($ExitCode -eq 0 -or $ExitCode -eq -1978335189)
+}
+
 function Install-WingetPackages {
     param([Parameter(Mandatory)][array]$Packages)
     foreach ($pkg in $Packages) {
@@ -135,8 +150,14 @@ function Install-WingetPackages {
             Write-Ok ('{0} ({1}): already installed' -f $pkg.Id, $pkg.Cmd)
             Write-Info 'Checking for updates...'
             # install 側と同様に --id + -e で ID 厳密一致にする (部分一致での誤対象を防ぐ)。
-            [void](Invoke-Winget @('upgrade', '--id', $pkg.Id, '-e', '--silent', '--disable-interactivity',
-                '--accept-source-agreements', '--accept-package-agreements'))
+            $ec = Invoke-Winget @('upgrade', '--id', $pkg.Id, '-e', '--silent', '--disable-interactivity',
+                '--accept-source-agreements', '--accept-package-agreements')
+            # 更新の失敗を握り潰すと、更新が何度失敗しても setup ログに何も出ない
+            # (install の失敗は Write-Fail していたので非対称だった)。ツールは古いまま
+            # でも動くので致命ではなく、警告として出す。
+            if (-not (Test-WingetUpgradeNoop $ec)) {
+                Write-Warn ('{0}: 更新に失敗しました (exit 0x{1:X8})。上の winget の出力を確認してください' -f $pkg.Id, $ec)
+            }
         } else {
             Write-Info ('Installing {0}...' -f $pkg.Id)
             $ec = Invoke-Winget @('install', '--id', $pkg.Id, '-e', '--silent', '--disable-interactivity',

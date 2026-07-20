@@ -5,6 +5,20 @@
 # dotfiles-win.ps1 から dot-source される。何を入れるか ($NpmGlobalPackages)
 # は個人選択なので dotfiles-win.config.ps1。
 
+# npm レジストリの dist-tag latest の版を返す (失敗時は '')。doctor の更新有無表示用。
+# npm CLI ではなくレジストリを直接引く (npm view はネットワーク待ちが読めず、node が
+# 無い環境でも doctor は動かしたいため)。スコープ付き (@scope/name) もそのまま渡せる。
+# $Script:ApiTimeoutSec / Get-EffectiveTimeout はエントリ側 (lib/github.ps1 と同じ約束)。
+function Get-NpmLatestVersion {
+    param([Parameter(Mandatory)][string]$Package)
+    try {
+        $resp = Invoke-RestMethod -Uri "https://registry.npmjs.org/$Package/latest" `
+            -UseBasicParsing -TimeoutSec (Get-EffectiveTimeout $Script:ApiTimeoutSec)
+        if ($resp.version) { return [string]$resp.version }
+    } catch {}
+    return ''
+}
+
 # npm で global にパッケージ群を導入/更新する。$VerifyCmd が導入後に
 # 解決できれば成功とみなす。node/npm は winget (OpenJS.NodeJS.LTS) で導入済み前提。
 function Install-NpmGlobal {
