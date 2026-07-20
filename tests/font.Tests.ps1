@@ -40,3 +40,27 @@ Describe 'フォントの版の記録' {
         Get-FontInstalledVersion -Family 'B Font' | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Get-FontDestFileName (上書きを避ける配置名)' {
+    It '拡張子の前にリリースタグを挟む' {
+        # 同名で上書きすると、動作中のアプリが掴んでいる ttf は必ず書き込みに失敗する。
+        Get-FontDestFileName -SourceName 'PlemolJPConsoleNF-Regular.ttf' -Version 'v3.0.0' |
+            Should -Be 'PlemolJPConsoleNF-Regular_v3.0.0.ttf'
+    }
+
+    It 'ファイル名に使えない文字はタグから落とす' {
+        Get-FontDestFileName -SourceName 'A-Regular.ttf' -Version 'release/1.0 beta' |
+            Should -Be 'A-Regular_release-1.0-beta.ttf'
+    }
+
+    It 'タグが無ければ元の名前のまま' {
+        Get-FontDestFileName -SourceName 'A-Regular.ttf' -Version '' | Should -Be 'A-Regular.ttf'
+        Get-FontDestFileName -SourceName 'A-Regular.ttf' | Should -Be 'A-Regular.ttf'
+    }
+
+    It '同じ版なら同じ名前になる (再実行で増殖しない)' {
+        $a = Get-FontDestFileName -SourceName 'A-Regular.ttf' -Version 'v1.2.3'
+        $b = Get-FontDestFileName -SourceName 'A-Regular.ttf' -Version 'v1.2.3'
+        $a | Should -Be $b
+    }
+}

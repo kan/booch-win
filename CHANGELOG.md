@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-07-20
+
+### Fixed
+- `Install-Font`（`lib/font.ps1`）の更新が実際には成立しなかった。同名 ttf を上書きしようと
+  するため、動作中のアプリ（setup を走らせているターミナル自身を含む）が掴んでいて必ず失敗する
+  （実測で 16/16 ファイルが使用中）。配置名にリリースタグを埋めて別ファイルとして置き、HKCU の
+  表示名キーは同じまま値を新しいパスへ差し替える方式に変えた。表示名が変わらないのでフォント
+  一覧に重複は出ず、ロックも回避できる。
+- 旧版・旧命名のファイルは配置後に掃除する（レジストリが新しいパスを指すので実体は宙に浮く。
+  掴まれていて消せない分は次回に回す）。対象は `$TtfPattern` に一致するものだけ。
+
+### Added
+- `Get-FontDestFileName`（`lib/font.ps1`）: 配置名の組み立て（`<base>_<tag><ext>`）。
+
 ## [0.6.4] - 2026-07-20
 
 ### Added
@@ -156,7 +170,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/kan/booch-win/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/kan/booch-win/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/kan/booch-win/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/kan/booch-win/compare/v0.6.1...v0.6.2

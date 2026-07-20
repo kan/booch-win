@@ -20,6 +20,20 @@ function Get-FontVersionStampPath {
     return (Join-Path $env:LOCALAPPDATA ("Microsoft\Windows\Fonts\.booch-win-{0}.version" -f $slug))
 }
 
+# 配置するファイル名。リリースタグを埋めて元ファイルとは別名にする (上書きを避けるため)。
+# タグが不明なときは元の名前のまま。ファイル名に使えない文字はタグから落とす。
+function Get-FontDestFileName {
+    param(
+        [Parameter(Mandatory)][string]$SourceName,   # 例: PlemolJPConsoleNF-Regular.ttf
+        [string]$Version                             # 例: v3.0.0
+    )
+    if (-not $Version) { return $SourceName }
+    $slug = $Version -replace '[^\w.-]', '-'
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($SourceName)
+    $ext = [System.IO.Path]::GetExtension($SourceName)
+    return ('{0}_{1}{2}' -f $base, $slug, $ext)
+}
+
 # 記録されている導入済みバージョン (記録が無ければ '')。
 function Get-FontInstalledVersion {
     param([Parameter(Mandatory)][string]$Family)
@@ -163,17 +177,25 @@ function Install-Font {
             throw "$TtfPattern にマッチする ttf がアーカイブから見つかりません"
         }
 
-        # 更新のとき、置き換え先の ttf を動作中のアプリ (ターミナル等) が掴んでいると
-        # コピーに失敗する。1 つの失敗で全部を巻き戻すより、置けたものは置いて、置けな
-        # かったものを名指しで報告するほうが復旧しやすい (アプリを閉じて再実行すればよい)。
-        # 失敗が 1 つでもあれば最後に throw するので、版の記録は行われず次回やり直せる。
+        # 配置名にリリースタグを埋めて「別ファイル」として置く。
+        #
+        # 同名で上書きしようとすると、動作中のアプリ (setup を走らせているターミナル自身を
+        # 含む) が ttf を掴んでいて必ず失敗する。実測で 16/16 ファイルが使用中だった。
+        # 別名なら書き込みは衝突せず、HKCU の表示名キーは同じまま値だけ新しいパスへ差し替わる
+        # ので、フォント一覧に重複も出ない。旧ファイルはこの後の掃除で消す (掴まれていれば
+        # 次回に回る)。
         $locked = @()
+        $installedPaths = @()
         foreach ($font in $fonts) {
-            $destPath = Join-Path $userFontDir $font.Name
+            $destName = Get-FontDestFileName -SourceName $font.Name -Version ([string]$release.tag_name)
+            $destPath = Join-Path $userFontDir $destName
             try {
                 Copy-Item $font.FullName -Destination $destPath -Force -ErrorAction Stop
+                $installedPaths += $destPath
             } catch {
-                $locked += $font.Name
+                # 同じ版を入れ直す場合など、配置先が既にあって掴まれているときはここへ来る。
+                # 置けたものは残し、置けなかったものを名指しで報告する (復旧しやすさ優先)。
+                $locked += $destName
                 continue
             }
 
@@ -192,8 +214,18 @@ function Install-Font {
         }
 
         if ($locked.Count -gt 0) {
-            throw ("{0} 個のフォントファイルを置き換えられませんでした (使用中): {1}。フォントを使っているアプリ (ターミナル / エディタ) を閉じるか、サインアウトしてから再実行してください" -f
+            throw ("{0} 個のフォントファイルを置けませんでした (使用中): {1}。フォントを使っているアプリ (ターミナル / エディタ) を閉じるか、サインアウトしてから再実行してください" -f
                 $locked.Count, ($locked -join ', '))
+        }
+
+        # 旧版・旧命名 (バージョンを埋める前の名前) のファイルを掃除する。レジストリは
+        # 新しいパスを指しているので実体は宙に浮いており、放置すると版ごとに数十 MB 積む。
+        # 掴まれていれば消せないが、それは次回に回してよい (害は容量だけ)。
+        # 対象は $TtfPattern に一致するファイル = このファミリのために置いたものだけ。
+        foreach ($old in @(Get-ChildItem -LiteralPath $userFontDir -Filter '*.ttf' -File -ErrorAction SilentlyContinue)) {
+            if ($old.BaseName -notmatch $TtfPattern) { continue }
+            if ($installedPaths -contains $old.FullName) { continue }
+            Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue
         }
         # 版の記録は全ファイルを置けたときだけ。失敗を記録すると、次回「最新」と誤判定して
         # 中途半端な状態のまま固定されてしまう。
