@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-20
+
+### Added
+- `Get-FontInstalledVersion` / `Get-FontVersionStampPath`（`lib/font.ps1`）: フォントを
+  どのリリースから入れたかを記録・参照する。ttf 内部のバージョンは配布元のタグと一致せず、
+  ファイル名も版を含まないため、記録が無いと更新の要否を判断できず初回導入時の版で凍結する。
+
+### Changed
+- `Install-Font`（`lib/font.ps1`）は導入済みでも呼べる更新経路になった（同名 ttf を上書き）。
+  成功したらリリースタグを記録する。更新時に動作中のアプリが ttf を掴んでいて置き換えられない
+  ファイルは名指しで報告し、1 つでも失敗したらタグを記録せず次回やり直せるようにする
+  （失敗を記録すると中途半端な状態で「最新」と誤判定して固定されてしまう）。
+
 ## [0.6.3] - 2026-07-20
 
 ### Added
@@ -143,7 +156,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/kan/booch-win/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/kan/booch-win/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/kan/booch-win/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/kan/booch-win/compare/v0.6.0...v0.6.1
