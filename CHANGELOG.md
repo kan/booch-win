@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-25
+
+### Added
+- `Get-ClaudeVersion`（`lib/claude.ps1`）: Claude Code 本体の版を返す（未導入・取得失敗は空文字）。
+  `claude --version` の "2.1.220 (Claude Code)" から版だけを取り出し、プラグインの版表示と粒度を揃える。
+
+### Changed
+- `Install-ClaudeCode`（`lib/claude.ps1`）が本体の版を導入の前後で取り直し、上がったときは
+  `Claude Code: updated (old -> new)`、変わらなければ `already installed (版)` と報告するようにした。
+  従来は版に触れず `already installed` としか出さないため、更新されても何が上がったか読めず、
+  本体だけ `Enable-ClaudePlugin`（`updated (old -> new)`）と非対称だった。
+
 ## [0.6.6] - 2026-07-20
 
 ### Added
@@ -178,7 +190,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kan/booch-win/compare/v0.6.6...v0.7.0
 [0.6.6]: https://github.com/kan/booch-win/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/kan/booch-win/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/kan/booch-win/compare/v0.6.3...v0.6.4

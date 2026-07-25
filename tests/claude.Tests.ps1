@@ -1,6 +1,7 @@
 ﻿#requires -Version 5.1
 # lib/claude.ps1 を検証する (Pester 5)。claude CLI を叩く関数は副作用の塊なので、
-# ここでは出力パース (Get-ClaudePluginVersion) だけを純粋に検証する。
+# 出力パース (Get-ClaudePluginVersion / Get-ClaudeVersion) と、本体導入の報告分岐
+# (Install-ClaudeCode) をスタブで検証する。
 # 版の取り違えは「更新されていないのに updated と報告する」等の誤報につながるため、
 # ブロック境界の扱いを重点的に見る。
 
@@ -24,6 +25,10 @@ Installed plugins:
     Scope: user
     Status: ✔ enabled
 '@
+
+    # 実行時に存在しない可能性のある外部コマンドもモックできるよう関数スタブを置く。
+    function claude { }
+    function npm { }
 }
 
 Describe 'Get-ClaudePluginVersion' {
@@ -59,5 +64,67 @@ Describe 'Get-ClaudePluginVersion' {
         Mock Get-ClaudePluginList { '' }
         Get-ClaudePluginVersion -Plugin 'pike-todo@pike' | Should -BeNullOrEmpty
         Should -Invoke Get-ClaudePluginList -Times 1 -Exactly
+    }
+}
+
+Describe 'Get-ClaudeVersion' {
+    It '"2.1.220 (Claude Code)" から版だけを取り出す' {
+        Mock Test-Cmd { $true }
+        Mock Invoke-Quiet { "2.1.220 (Claude Code)`r`n" }
+        Get-ClaudeVersion | Should -Be '2.1.220'
+    }
+
+    It 'claude 未導入なら空文字 (呼びに行かない)' {
+        Mock Test-Cmd { $false }
+        Mock Invoke-Quiet { '2.1.220 (Claude Code)' }
+        Get-ClaudeVersion | Should -BeNullOrEmpty
+        Should -Invoke Invoke-Quiet -Times 0
+    }
+
+    It '取得失敗 (空出力) は空文字' {
+        Mock Test-Cmd { $true }
+        Mock Invoke-Quiet { '' }
+        Get-ClaudeVersion | Should -BeNullOrEmpty
+    }
+
+    It '版に見える文字列が無ければ 1 行目をそのまま返す' {
+        Mock Test-Cmd { $true }
+        Mock Invoke-Quiet { "unknown`n" }
+        Get-ClaudeVersion | Should -Be 'unknown'
+    }
+}
+
+Describe 'Install-ClaudeCode' {
+    BeforeEach {
+        $script:Ok = @()
+        Mock Write-Ok { $script:Ok += $Msg }
+        Mock Write-Info { }
+        Mock Write-Fail { $script:Ok += "FAIL: $Msg" }
+        # update / npm は呼ばない。$LASTEXITCODE を 0 にして npm フォールバックへ落ちないようにする。
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0 }
+        Mock npm { $global:LASTEXITCODE = 0 }
+    }
+
+    It '版が上がれば updated (old -> new) を報告する' {
+        Mock Test-Cmd { $true }
+        $script:n = 0
+        Mock Get-ClaudeVersion { $script:n++; if ($script:n -eq 1) { '2.1.195' } else { '2.1.220' } }
+        Install-ClaudeCode
+        $script:Ok | Should -Be @('Claude Code: updated (2.1.195 -> 2.1.220)')
+    }
+
+    It '版が変わらなければ already installed (版) を報告する' {
+        Mock Test-Cmd { $true }
+        Mock Get-ClaudeVersion { '2.1.220' }
+        Install-ClaudeCode
+        $script:Ok | Should -Be @('Claude Code: already installed (2.1.220)')
+    }
+
+    It '未導入からの導入は installed (版) を報告する' {
+        Mock Test-Cmd { param($Name) $Name -eq 'npm' }   # claude 無し / npm あり
+        Mock Get-ClaudeVersion { '2.1.220' }
+        Install-ClaudeCode
+        Should -Invoke npm -Times 1
+        $script:Ok | Should -Be @('Claude Code: installed (2.1.220)')
     }
 }

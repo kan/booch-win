@@ -5,22 +5,47 @@
 # dotfiles-win.ps1 から dot-source される。どのプラグインを有効化するか
 # ($ClaudePlugins) は個人選択なので dotfiles-win.config.ps1。
 
+# Claude Code 本体の版を返す (未導入 / 取得失敗は空文字)。
+# `claude --version` は "2.1.220 (Claude Code)" のように版の後ろに製品名が付くので、
+# 先頭行から版だけを取り出す (プラグインの版表示と粒度を揃えるため)。
+function Get-ClaudeVersion {
+    if (-not (Test-Cmd 'claude')) { return '' }
+    $out = Invoke-Quiet { & claude --version 2>&1 | Out-String }
+    if (-not $out) { return '' }
+    $line = ($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    if (-not $line) { return '' }
+    if ($line -match '\d+\.\d+\.\d+[^\s]*') { return $Matches[0] }
+    return $line.Trim()
+}
+
 # Claude Code 本体を導入/更新する。導入済みなら claude update、失敗時や
 # 未導入時は npm でグローバル導入する (node/npm は winget で導入済み前提)。
+# 版は導入の前後で取り直して報告する。後の版だけを見ると更新しても
+# 「already installed」としか出ず、本体だけプラグイン (Enable-ClaudePlugin) と
+# 非対称に「何が上がったか」が読めなくなる。
 function Install-ClaudeCode {
     if (Test-Cmd 'claude') {
-        Write-Ok 'Claude Code: already installed'
-        Write-Info 'Updating...'
+        $old = Get-ClaudeVersion
+        Write-Info 'Updating Claude Code...'
         Invoke-Quiet { & claude update 2>&1 | Out-Null }
         if ($LASTEXITCODE -ne 0 -and (Test-Cmd 'npm')) {
             & npm install -g '@anthropic-ai/claude-code'
+        }
+        $new = Get-ClaudeVersion
+        if ($old -and $new -and $old -ne $new) {
+            Write-Ok "Claude Code: updated ($old -> $new)"
+        } elseif ($new) {
+            Write-Ok "Claude Code: already installed ($new)"
+        } else {
+            Write-Ok 'Claude Code: already installed'
         }
     } else {
         if (Test-Cmd 'npm') {
             Write-Info 'Installing Claude Code...'
             & npm install -g '@anthropic-ai/claude-code'
             if ($LASTEXITCODE -eq 0) {
-                Write-Ok 'Claude Code: installed'
+                $new = Get-ClaudeVersion
+                if ($new) { Write-Ok "Claude Code: installed ($new)" } else { Write-Ok 'Claude Code: installed' }
             } else {
                 Write-Fail 'Claude Code: install failed'
             }
