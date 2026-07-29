@@ -5,7 +5,8 @@
 # dotfiles-win.ps1 から dot-source される。どのツールを見るか
 # ($DoctorTools) は個人選択なので dotfiles-win.config.ps1。詳細は #6。
 # ディスクの空き (Show-DiskFree) と WSL の ext4.vhdx サイズ (Show-WslVhdxSize) もここに置く。
-# 後者は lib/system.ps1 の Get-WslVhdxPath を使う (エントリが両方 dot-source する前提)。
+# 後者は lib/system.ps1 の Get-WslVhdxPath / Get-FileAllocatedSize を使う
+# (エントリが両方 dot-source する前提)。
 
 # バージョン文字列から数値部分 (1.2 / 1.2.3 / 1.2.3.4) を取り出す。取れなければ ''。
 # --version の出力は「gh version 2.96.0 (2026-07-02)」「v0.23.0」のように装飾がまちまちで、
@@ -101,8 +102,9 @@ function Show-DiskFree {
     return $false
 }
 
-# WSL ディストロの ext4.vhdx の実サイズを列挙する (情報表示のみ)。WSL 内で消しても vhdx は
-# 自動では縮まないため、Windows 側の空きと乖離しがちな値を可視化する。
+# WSL ディストロの ext4.vhdx のサイズを列挙する (情報表示のみ)。
+# sparse な vhdx は論理サイズが減らないので、ドライブの空きに効く「実占有」を主に出し、
+# 論理サイズは括弧で添える (実測で 151GB / 論理 213GB のように 60GB 以上ずれる)。
 function Show-WslVhdxSize {
     $vhdxs = Get-WslVhdxPath
     if (-not $vhdxs) {
@@ -110,7 +112,8 @@ function Show-WslVhdxSize {
         return
     }
     foreach ($v in $vhdxs) {
-        $sizeGB = [math]::Round((Get-Item $v.Vhdx).Length / 1GB, 1)
-        Write-Status ('  {0} vhdx' -f $v.Name) 'OK' Green ('{0} GB' -f $sizeGB)
+        $logical   = [math]::Round((Get-Item $v.Vhdx).Length / 1GB, 1)
+        $allocated = [math]::Round((Get-FileAllocatedSize $v.Vhdx) / 1GB, 1)
+        Write-Status ('  {0} vhdx' -f $v.Name) 'OK' Green ('実占有 {0} GB (論理 {1} GB)' -f $allocated, $logical)
     }
 }

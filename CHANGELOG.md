@@ -6,6 +6,30 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-29
+
+### Fixed
+- `Invoke-BoochWinCompactWsl` が `wsl --manage <Distro> --compact` を呼んでいたが、**wsl.exe に
+  そのオプションは存在しない**（`--manage` が持つのは `--move` / `--set-sparse` /
+  `--set-default-user` だけ。WSL 2.7.11 で確認）。常に `Wsl/E_INVALIDARG` で失敗し、しかも
+  エラー文言が「WSL が古い場合は wsl --update」だったため、最新の WSL でも直らない誤った
+  案内を出し続けていた。縮小は `Optimize-BoochWinVhdx`（Hyper-V の `Optimize-VHD`、無ければ
+  `diskpart` の `compact vdisk`）で行う。
+- 縮小の前後表示が論理サイズ（`Length`）だった。sparse な vhdx では論理サイズはほとんど
+  減らず（実測で論理 213GB / 実占有 151GB）、解放量が 0 に見えてしまう。実占有で報告する。
+
+### Added
+- `Optimize-BoochWinVhdx -Path <vhdx>`（`lib/cleanup.ps1`）: vhdx の実縮小。`Optimize-VHD` を
+  優先し、無ければ `diskpart` にフォールバックする。どちらも管理者権限とデタッチ済み
+  （`wsl --shutdown` 済み）が前提なので、非昇格なら実行せず `$false` を返す。
+- `Get-FileAllocatedSize -Path <file>`（`lib/system.ps1`）: sparse ファイルの実占有バイト数
+  （`GetCompressedFileSize`）。ドライブの空きに効くのはこちらなので、vhdx の表示・解放量の
+  計算はすべてこの値を使う。
+
+### Changed
+- `Show-WslVhdxSize`（`lib/doctor.ps1`）が「実占有（論理）」の形で両方を出すようにした。
+  論理サイズだけだと、fstrim で解放済みでも巨大なまま見える。
+
 ## [0.8.0] - 2026-07-29
 
 ### Added
@@ -209,7 +233,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kan/booch-win/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kan/booch-win/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kan/booch-win/compare/v0.6.6...v0.7.0
 [0.6.6]: https://github.com/kan/booch-win/compare/v0.6.5...v0.6.6

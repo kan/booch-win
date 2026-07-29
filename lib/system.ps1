@@ -123,6 +123,33 @@ function Get-CurrentProcessAncestorId {
     return $ids
 }
 
+# ファイルが実際にディスク上で占有しているバイト数を返す (論理サイズではない)。
+# WSL の ext4.vhdx は sparse ファイルなので、Length (論理サイズ) は実消費を大きく上回る
+# (実測: 論理 213GB に対し実占有 151GB)。空き容量の話をするときに見るべきは後者なので、
+# GetCompressedFileSize で割当済みバイト数を取る。取得できなければ Length を返す。
+function Get-FileAllocatedSize {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not ('BoochWinFileSize' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class BoochWinFileSize {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern uint GetCompressedFileSizeW(string lpFileName, out uint lpFileSizeHigh);
+}
+'@
+    }
+    try {
+        $high = 0
+        $low = [BoochWinFileSize]::GetCompressedFileSizeW($Path, [ref]$high)
+        # 失敗時は 0xFFFFFFFF が返る (下位のみで判定できないので high と併せて見る)。
+        if ($low -eq [uint32]::MaxValue -and $high -eq 0) { return (Get-Item -LiteralPath $Path).Length }
+        return (([long]$high -shl 32) -bor [long]$low)
+    } catch {
+        return (Get-Item -LiteralPath $Path).Length
+    }
+}
+
 # 登録済み WSL ディストリビューションの ext4.vhdx パスを列挙する。
 function Get-WslVhdxPath {
     $lxssRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'

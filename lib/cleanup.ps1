@@ -5,8 +5,10 @@
 # dotfiles-win.ps1 から dot-source される。消費側は Mode (light|full) と破壊的処理の
 # opt-in フラグ (-CleanTauri / -CompactVhdx) を渡すだけ。vhdx の縮小は
 # Invoke-BoochWinCompactWsl に切り出してあり、消費側は専用サブコマンド
-# (dotfiles-win compact-wsl) からも直接呼べる。Tauri/WSL の実処理ヘルパーは
-# lib/system.ps1 (Clear-TauriTargets / Get-WslVhdxPath)。放置 worktree の prune は
+# (dotfiles-win compact-wsl) からも直接呼べる。縮小そのものは Optimize-BoochWinVhdx
+# (Hyper-V の Optimize-VHD か diskpart。wsl.exe に compact 相当は無い) で、管理者権限が要る。
+# Tauri/WSL の実処理ヘルパーは lib/system.ps1
+# (Clear-TauriTargets / Get-WslVhdxPath / Get-FileAllocatedSize / Test-IsElevated)。放置 worktree の prune は
 # Invoke-BoochWinWorktreePrune (どの repo を対象にするかは消費側が渡す)。Linux 側 booch の
 # lib/cleanup.sh (booch_cleanup_worktree_prune 含む) に対応。
 
@@ -95,7 +97,9 @@ function Invoke-BoochWinCompactWsl {
     }
     Write-Info 'ヒント: 先に WSL 内で dotfiles cleanup (fstrim) を回すと最適化の効果が高まります'
     foreach ($v in $vhdxs) {
-        $before = (Get-Item $v.Vhdx).Length
+        # 見るのは論理サイズ (Length) ではなく実占有。sparse な vhdx では両者が大きく食い違い、
+        # fstrim で解放した分は実占有にだけ現れる。
+        $before = Get-FileAllocatedSize $v.Vhdx
 
         # スパース化が未設定の時だけ実施する (--allow-unsafe 必須)。
         # NTFS の SparseFile 属性で設定済みかを判定する。
@@ -107,19 +111,62 @@ function Invoke-BoochWinCompactWsl {
                 Write-Fail ('{0}: set-sparse 失敗 (WSL が古い場合は wsl --update)' -f $v.Name)
             }
         } else {
-            Write-Ok ('{0}: 既にスパース化済み' -f $v.Name)
+            Write-Ok ('{0}: 既にスパース化済み (fstrim した分は自動で解放されます)' -f $v.Name)
         }
 
-        # 実際の縮小は wsl --manage --compact で行う (管理者権限不要)。
-        Write-Info ('compacting {0} ({1:N0} MB)...' -f $v.Name, ($before / 1MB))
-        & wsl.exe --manage $v.Name --compact
-        if ($LASTEXITCODE -eq 0) {
-            $after = (Get-Item $v.Vhdx).Length
-            Write-Ok ('{0}: {1:N0} MB -> {2:N0} MB ({3:N0} MB 解放)' -f `
-                $v.Name, ($before / 1MB), ($after / 1MB), (($before - $after) / 1MB))
-        } else {
-            Write-Fail ('{0}: compact 失敗 (WSL が古い場合は wsl --update を試してください)' -f $v.Name)
+        Write-Info ('compacting {0} (実占有 {1:N1} GB)...' -f $v.Name, ($before / 1GB))
+        if (Optimize-BoochWinVhdx -Path $v.Vhdx) {
+            $after = Get-FileAllocatedSize $v.Vhdx
+            Write-Ok ('{0}: 実占有 {1:N1} GB -> {2:N1} GB ({3:N1} GB 解放)' -f `
+                $v.Name, ($before / 1GB), ($after / 1GB), (($before - $after) / 1GB))
         }
+    }
+}
+
+# vhdx を縮小する。wsl.exe には compact 相当のオプションが無い (--manage が持つのは
+# --move / --set-sparse / --set-default-user だけ) ので、Hyper-V の Optimize-VHD か
+# diskpart の `compact vdisk` で行う。どちらも管理者権限が要り、対象 vhdx がデタッチ済み
+# (= 事前に wsl --shutdown 済み) であることが前提。
+# 戻り値: 縮小を実行できたら $true。
+function Optimize-BoochWinVhdx {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-IsElevated)) {
+        Write-Fail 'vhdx の縮小には管理者権限が必要です (管理者の PowerShell で実行してください)'
+        return $false
+    }
+
+    # Hyper-V の PowerShell モジュールがあればそれを使う (diskpart より扱いが安全)。
+    if (Get-Command 'Optimize-VHD' -ErrorAction SilentlyContinue) {
+        try {
+            Optimize-VHD -Path $Path -Mode Full -ErrorAction Stop
+            return $true
+        } catch {
+            Write-Warn ('Optimize-VHD 失敗: {0} (diskpart で再試行します)' -f $_.Exception.Message)
+        }
+    }
+
+    # フォールバック: diskpart。read-only でアタッチしてから compact する。
+    $tmp = [System.IO.Path]::GetTempFileName()
+    try {
+        @(
+            "select vdisk file=`"$Path`""
+            'attach vdisk readonly'
+            'compact vdisk'
+            'detach vdisk'
+            'exit'
+        ) | Set-Content -LiteralPath $tmp -Encoding Ascii
+        $out = & diskpart.exe /s $tmp 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail ('diskpart による縮小に失敗しました: {0}' -f (($out | Select-Object -Last 3) -join ' / '))
+            return $false
+        }
+        return $true
+    } catch {
+        Write-Fail ('diskpart の実行に失敗しました: {0}' -f $_.Exception.Message)
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
 }
 

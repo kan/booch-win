@@ -103,6 +103,35 @@ Describe 'Invoke-BoochWinCompactWsl' {
         Invoke-BoochWinCompactWsl
         Should -Invoke Stop-BoochWinWsl -Times 0
     }
+
+    It '各 vhdx を Optimize-BoochWinVhdx へ渡し、実占有の前後を報告する' {
+        $f = Join-Path $TestDrive 'ext4.vhdx'
+        Set-Content -LiteralPath $f -Value 'x'
+        Mock Test-Cmd { $true }
+        Mock Stop-BoochWinWsl {}
+        Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
+        Mock Optimize-BoochWinVhdx { $true }
+        # 実占有は縮小の前後で変わる想定 (1 回目 100GB → 2 回目 60GB)。
+        $script:calls = 0
+        Mock Get-FileAllocatedSize { $script:calls++; if ($script:calls -eq 1) { 100GB } else { 60GB } }
+        Invoke-BoochWinCompactWsl
+        Should -Invoke Optimize-BoochWinVhdx -Times 1
+        Should -Invoke Write-Ok -ParameterFilter { $Msg -match '40\.0 GB 解放' } -Times 1
+    }
+}
+
+Describe 'Optimize-BoochWinVhdx' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
+    }
+
+    # wsl.exe には compact 相当のオプションが無く、Optimize-VHD も diskpart も昇格が要る。
+    # 非昇格で走らせて「失敗」と出すのではなく、要件として先に弾く。
+    It '非昇格なら実行せず false を返す' {
+        Mock Test-IsElevated { $false }
+        Optimize-BoochWinVhdx -Path 'X:\dummy.vhdx' | Should -BeFalse
+        Should -Invoke Write-Fail -Times 1
+    }
 }
 
 Describe 'Invoke-BoochWinWorktreePrune' {
