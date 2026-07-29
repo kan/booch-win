@@ -114,6 +114,16 @@ function Invoke-BoochWinCompactWsl {
         return
     }
 
+    # 縮小には管理者権限が要る (Optimize-VHD / diskpart のどちらも)。権限が無いまま進むと
+    # WSL を停止した末に必ず失敗する — sparse 判定と同じ理由で、停止の前に弾く。消費側
+    # (compact-wsl 相当のサブコマンド) が昇格の面倒を見ることもあるが、cleanup の
+    # -CompactVhdx のようにここへ直接来る経路もあるため、機構側でも止める。
+    if (-not (Test-IsElevated)) {
+        Write-Fail 'vhdx の縮小には管理者権限が必要です (管理者の PowerShell で実行してください)'
+        Write-Info 'WSL は停止していません'
+        return
+    }
+
     Stop-BoochWinWsl
     foreach ($v in $targets) {
         $before = Get-FileAllocatedSize $v.Vhdx
@@ -159,6 +169,14 @@ function Optimize-BoochWinVhdx {
     }
 
     # フォールバック: diskpart。read-only でアタッチしてから compact する。
+    # diskpart はパスをスクリプトファイルへ文字列として埋め込む形になるので、ここだけは
+    # 改行・引用符を含むパスを弾く (昇格した diskpart.exe に追加コマンドを読ませないため)。
+    # Optimize-VHD 経路は引数渡しなのでこの心配は無い。
+    if ($Path -match '[\r\n"]') {
+        Write-Fail 'vhdx のパスに使用できない文字 (改行 / 引用符) が含まれています'
+        return $false
+    }
+
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
         @(
@@ -171,12 +189,39 @@ function Optimize-BoochWinVhdx {
         $out = & diskpart.exe /s $tmp 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Fail ('diskpart による縮小に失敗しました: {0}' -f (($out | Select-Object -Last 3) -join ' / '))
+            # diskpart はスクリプト中の 1 行が失敗するとそれ以降を実行しない。attach まで通って
+            # compact で失敗した場合、detach vdisk に到達せず read-only アタッチのまま残り、
+            # 次の WSL 起動が「ファイル使用中」で失敗しうる。後始末を試みる。
+            Dismount-BoochWinVhdx -Path $Path
             return $false
         }
         return $true
     } catch {
         Write-Fail ('diskpart の実行に失敗しました: {0}' -f $_.Exception.Message)
+        Dismount-BoochWinVhdx -Path $Path
         return $false
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# diskpart でアタッチしたまま残った vhdx をデタッチする (compact 失敗時の後始末)。
+# best-effort — 元々アタッチされていなければ diskpart がエラーを返すだけで害はないので、
+# 失敗は握って呼び出し側の主エラーを覆い隠さない。
+function Dismount-BoochWinVhdx {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $tmp = [System.IO.Path]::GetTempFileName()
+    try {
+        @(
+            "select vdisk file=`"$Path`""
+            'detach vdisk'
+            'exit'
+        ) | Set-Content -LiteralPath $tmp -Encoding Ascii
+        & diskpart.exe /s $tmp 2>&1 | Out-Null
+    } catch {
+        # 後始末の失敗は主エラー (呼び出し側が既に出している) を覆い隠さないよう握る。
+        Write-Debug ('vhdx のデタッチに失敗: {0}' -f $_.Exception.Message)
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }

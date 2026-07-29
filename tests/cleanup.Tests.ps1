@@ -120,6 +120,24 @@ Describe 'Invoke-BoochWinCompactWsl' {
         Should -Invoke Optimize-BoochWinVhdx -Times 0
     }
 
+    # 昇格していないと Optimize-VHD / diskpart はどちらも失敗する。停止してから失敗しては
+    # sparse のときと同じく稼働中のコンテナ・シェルを無駄に殺すので、停止の前に弾く
+    # ← 消費側 (サブコマンド) の昇格チェックを通らない経路 (cleanup -CompactVhdx) のガード。
+    It '非昇格なら WSL を止めず compact も試みない' {
+        $f = Join-Path $TestDrive 'plain.vhdx'
+        Set-Content -LiteralPath $f -Value 'x'
+        Mock Test-Cmd { $true }
+        Mock Stop-BoochWinWsl {}
+        Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
+        Mock Test-FileSparse { $false }
+        Mock Test-IsElevated { $false }
+        Mock Optimize-BoochWinVhdx { $true }
+        Mock Get-FileAllocatedSize { 100GB }
+        Invoke-BoochWinCompactWsl
+        Should -Invoke Stop-BoochWinWsl -Times 0
+        Should -Invoke Optimize-BoochWinVhdx -Times 0
+    }
+
     It '非 sparse の vhdx は停止して Optimize-BoochWinVhdx へ渡し、前後を報告する' {
         $f = Join-Path $TestDrive 'plain.vhdx'
         Set-Content -LiteralPath $f -Value 'x'
@@ -127,6 +145,7 @@ Describe 'Invoke-BoochWinCompactWsl' {
         Mock Stop-BoochWinWsl {}
         Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
         Mock Test-FileSparse { $false }
+        Mock Test-IsElevated { $true }
         Mock Optimize-BoochWinVhdx { $true }
         # 実占有は縮小の前後で変わる想定 (報告用の 1 回目 → compact 前 → compact 後)。
         $script:calls = 0

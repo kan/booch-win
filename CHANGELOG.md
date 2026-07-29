@@ -6,6 +6,29 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-29
+
+### Fixed
+- `Invoke-BoochWinCompactWsl` が **非昇格でも WSL を停止してから失敗していた**。縮小には
+  管理者権限が要る（`Optimize-VHD` / `diskpart` のどちらの経路でも）が、権限確認は
+  `Optimize-BoochWinVhdx` の中＝ WSL 停止より後にしかなかった。消費側が昇格の面倒を見る経路
+  （`compact-wsl` 相当のサブコマンド）では事前に弾けていたが、`Invoke-BoochWinCleanup
+  -CompactVhdx` のように機構を直接呼ぶ経路では停止だけが先に起きる。0.10.0 の sparse 判定と
+  同じ理由で、**停止の前に**弾くようにした。
+- `Optimize-BoochWinVhdx` の diskpart フォールバックで、`compact vdisk` が失敗すると
+  `detach vdisk` に到達せず vhdx が read-only アタッチのまま残りえた（diskpart はスクリプト中の
+  1 行が失敗するとそれ以降を実行しない）。失敗時に後始末のデタッチを試みる。
+
+### Added
+- `Dismount-BoochWinVhdx`: diskpart でアタッチしたままの vhdx をデタッチする best-effort
+  ヘルパー（compact 失敗時の後始末に使う）。
+
+### Security
+- `Optimize-BoochWinVhdx` の diskpart フォールバックで、パスに改行・引用符が含まれる場合を
+  拒否するようにした。diskpart はスクリプトファイル経由でパスを受け取るため、そのまま埋め込むと
+  昇格した `diskpart.exe` に意図しない追加コマンドを読ませうる。呼び出し元の `Get-WslVhdxPath`
+  が `Test-Path` で実在確認しており到達しにくい経路だが、機構側でも塞ぐ。
+
 ## [0.10.0] - 2026-07-29
 
 ### Fixed
@@ -252,6 +275,7 @@
   Tier2 手動スモーク手順（Windows Sandbox）。
 
 [Unreleased]: https://github.com/kan/booch-win/compare/v0.10.0...HEAD
+[0.11.0]: https://github.com/kan/booch-win/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kan/booch-win/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kan/booch-win/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kan/booch-win/compare/v0.7.0...v0.8.0
