@@ -6,6 +6,25 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-29
+
+### Added
+- `Invoke-BoochWinCompactWsl`（`lib/cleanup.ps1`）: WSL を停止して ext4.vhdx を縮小する
+  （`wsl --shutdown` → 未設定なら `--set-sparse` → `--compact`）。従来は
+  `Invoke-BoochWinCleanup -CompactVhdx` の中に埋まっていて cleanup 経由でしか呼べなかったが、
+  WSL 内で消した分を Windows 側の空きへ反映する操作は単独で実行したい（掃除とは別軸の作業で、
+  実行のたびに WSL を落とす）。消費側は専用サブコマンドから直接呼べる。
+- `Stop-BoochWinWsl`（`lib/cleanup.ps1`）: `wsl --shutdown` + 解放待ちの seam。テストで実際に
+  WSL を落とさずに compact の分岐を検証するために切り出した。
+- `Show-DiskFree -Drive C -WarnGB 20 [-Hint ...]`（`lib/doctor.ps1`）: ドライブの空き容量行。
+  閾値未満で WARN を出し、真偽値を返す（消費側の missing/warn 集計に載せられる）。
+  Linux 側 booch の `booch_doctor_disk` と対称。
+- `Show-WslVhdxSize`（`lib/doctor.ps1`）: 各 WSL ディストロの ext4.vhdx 実サイズを列挙する。
+  WSL 内で削除しても vhdx は自動では縮まないため、ドライブの空きと乖離する値を可視化する。
+
+### Changed
+- `Invoke-BoochWinCleanup -CompactVhdx` は `Invoke-BoochWinCompactWsl` へ委譲する（振る舞いは同じ）。
+
 ## [0.7.0] - 2026-07-25
 
 ### Added
@@ -190,7 +209,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kan/booch-win/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kan/booch-win/compare/v0.6.6...v0.7.0
 [0.6.6]: https://github.com/kan/booch-win/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/kan/booch-win/compare/v0.6.4...v0.6.5

@@ -3,7 +3,9 @@
 # lib/cleanup.ps1: 汎用機構 — 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除、放置 git worktree の prune
 #
 # dotfiles-win.ps1 から dot-source される。消費側は Mode (light|full) と破壊的処理の
-# opt-in フラグ (-CleanTauri / -CompactVhdx) を渡すだけ。Tauri/WSL の実処理ヘルパーは
+# opt-in フラグ (-CleanTauri / -CompactVhdx) を渡すだけ。vhdx の縮小は
+# Invoke-BoochWinCompactWsl に切り出してあり、消費側は専用サブコマンド
+# (dotfiles-win compact-wsl) からも直接呼べる。Tauri/WSL の実処理ヘルパーは
 # lib/system.ps1 (Clear-TauriTargets / Get-WslVhdxPath)。放置 worktree の prune は
 # Invoke-BoochWinWorktreePrune (どの repo を対象にするかは消費側が渡す)。Linux 側 booch の
 # lib/cleanup.sh (booch_cleanup_worktree_prune 含む) に対応。
@@ -58,51 +60,67 @@ function Invoke-BoochWinCleanup {
         if ($CompactVhdx) {
             Write-Host ''
             Write-Host '--- WSL shutdown + disk optimize (--compact-vhdx) ---'
-            if (Test-Cmd 'wsl') {
-                Write-Info 'wsl --shutdown ...'
-                & wsl.exe --shutdown
-                Start-Sleep -Seconds 2  # vhdx の解放を待つ
-
-                $vhdxs = Get-WslVhdxPath
-                if (-not $vhdxs) {
-                    Write-Warn 'WSL ディストロが見つかりません (スキップ)'
-                } else {
-                    Write-Info 'ヒント: 先に WSL 内で dotfiles cleanup (fstrim) を回すと最適化の効果が高まります'
-                    foreach ($v in $vhdxs) {
-                        $before = (Get-Item $v.Vhdx).Length
-
-                        # スパース化が未設定の時だけ実施する (--allow-unsafe 必須)。
-                        # NTFS の SparseFile 属性で設定済みかを判定する。
-                        $isSparse = ((Get-Item $v.Vhdx).Attributes -band [System.IO.FileAttributes]::SparseFile) -ne 0
-                        if (-not $isSparse) {
-                            Write-Info ('set-sparse {0} ...' -f $v.Name)
-                            & wsl.exe --manage $v.Name --set-sparse true --allow-unsafe
-                            if ($LASTEXITCODE -ne 0) {
-                                Write-Fail ('{0}: set-sparse 失敗 (WSL が古い場合は wsl --update)' -f $v.Name)
-                            }
-                        } else {
-                            Write-Ok ('{0}: 既にスパース化済み' -f $v.Name)
-                        }
-
-                        # 実際の縮小は wsl --manage --compact で行う (管理者権限不要)。
-                        Write-Info ('compacting {0} ({1:N0} MB)...' -f $v.Name, ($before / 1MB))
-                        & wsl.exe --manage $v.Name --compact
-                        if ($LASTEXITCODE -eq 0) {
-                            $after = (Get-Item $v.Vhdx).Length
-                            Write-Ok ('{0}: {1:N0} MB -> {2:N0} MB' -f $v.Name, ($before / 1MB), ($after / 1MB))
-                        } else {
-                            Write-Fail ('{0}: compact 失敗 (WSL が古い場合は wsl --update を試してください)' -f $v.Name)
-                        }
-                    }
-                }
-            } else {
-                Write-Warn 'wsl コマンドが見つかりません (WSL 未導入?)'
-            }
+            Invoke-BoochWinCompactWsl
         }
     }
 
     Write-Host ''
     Write-Host 'Cleanup complete.'
+}
+
+# WSL 全体を停止して vhdx のロックを解放する。compact の前提であり、テストから実際に WSL を
+# 落とさずに済むよう独立した関数にしてある (mock 対象)。
+function Stop-BoochWinWsl {
+    Write-Info 'wsl --shutdown ...'
+    & wsl.exe --shutdown
+    Start-Sleep -Seconds 2  # vhdx の解放を待つ
+}
+
+# WSL を停止して ext4.vhdx を縮小する (wsl --shutdown → 必要なら set-sparse → compact)。
+# WSL 内でファイルを消しても vhdx は自動では縮まないため、Windows 側の空きを取り戻すには
+# この操作が要る。WSL を落とすので破壊的: 消費側は専用サブコマンド (dotfiles-win compact-wsl)
+# か cleanup の明示フラグ (--compact-vhdx) からだけ呼ぶ。稼働中のコンテナ・シェルは止まる。
+# 見出し行は消費側が出す (cleanup の節 / サブコマンドのタイトル)。
+function Invoke-BoochWinCompactWsl {
+    if (-not (Test-Cmd 'wsl')) {
+        Write-Warn 'wsl コマンドが見つかりません (WSL 未導入?)'
+        return
+    }
+    Stop-BoochWinWsl
+
+    $vhdxs = Get-WslVhdxPath
+    if (-not $vhdxs) {
+        Write-Warn 'WSL ディストロが見つかりません (スキップ)'
+        return
+    }
+    Write-Info 'ヒント: 先に WSL 内で dotfiles cleanup (fstrim) を回すと最適化の効果が高まります'
+    foreach ($v in $vhdxs) {
+        $before = (Get-Item $v.Vhdx).Length
+
+        # スパース化が未設定の時だけ実施する (--allow-unsafe 必須)。
+        # NTFS の SparseFile 属性で設定済みかを判定する。
+        $isSparse = ((Get-Item $v.Vhdx).Attributes -band [System.IO.FileAttributes]::SparseFile) -ne 0
+        if (-not $isSparse) {
+            Write-Info ('set-sparse {0} ...' -f $v.Name)
+            & wsl.exe --manage $v.Name --set-sparse true --allow-unsafe
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail ('{0}: set-sparse 失敗 (WSL が古い場合は wsl --update)' -f $v.Name)
+            }
+        } else {
+            Write-Ok ('{0}: 既にスパース化済み' -f $v.Name)
+        }
+
+        # 実際の縮小は wsl --manage --compact で行う (管理者権限不要)。
+        Write-Info ('compacting {0} ({1:N0} MB)...' -f $v.Name, ($before / 1MB))
+        & wsl.exe --manage $v.Name --compact
+        if ($LASTEXITCODE -eq 0) {
+            $after = (Get-Item $v.Vhdx).Length
+            Write-Ok ('{0}: {1:N0} MB -> {2:N0} MB ({3:N0} MB 解放)' -f `
+                $v.Name, ($before / 1MB), ($after / 1MB), (($before - $after) / 1MB))
+        } else {
+            Write-Fail ('{0}: compact 失敗 (WSL が古い場合は wsl --update を試してください)' -f $v.Name)
+        }
+    }
 }
 
 # 指定した各 git repo で `git worktree prune` を回す。実体が消えた worktree の登録メタだけを

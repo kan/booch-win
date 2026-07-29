@@ -57,8 +57,51 @@ Describe 'Invoke-BoochWinCleanup' {
         { Invoke-BoochWinCleanup -Mode full -CompactVhdx } | Should -Not -Throw
     }
 
+    It 'full + -CompactVhdx は compact 処理へ委譲する' {
+        Mock Test-Cmd { $false }
+        Mock Invoke-BoochWinCompactWsl {}
+        Invoke-BoochWinCleanup -Mode full -CompactVhdx
+        Should -Invoke Invoke-BoochWinCompactWsl -Times 1
+    }
+
+    It 'full でも -CompactVhdx なしなら compact しない (WSL を落とさない)' {
+        Mock Test-Cmd { $false }
+        Mock Invoke-BoochWinCompactWsl {}
+        Invoke-BoochWinCleanup -Mode full
+        Should -Invoke Invoke-BoochWinCompactWsl -Times 0
+    }
+
     It '不正な Mode は ValidateSet で弾く' {
         { Invoke-BoochWinCleanup -Mode 'bogus' } | Should -Throw
+    }
+}
+
+Describe 'Invoke-BoochWinCompactWsl' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
+    }
+
+    It 'wsl 不在なら warn して落ちない (WSL 未導入の Windows)' {
+        Mock Test-Cmd { $false }
+        Mock Get-WslVhdxPath { @() }
+        { Invoke-BoochWinCompactWsl } | Should -Not -Throw
+        Should -Invoke Write-Warn -Times 1
+    }
+
+    It 'ディストロが見つからなければ停止だけして抜ける' {
+        Mock Test-Cmd { $true }
+        Mock Stop-BoochWinWsl {}    # 実際に WSL を落とさない
+        Mock Get-WslVhdxPath { @() }
+        { Invoke-BoochWinCompactWsl } | Should -Not -Throw
+        Should -Invoke Stop-BoochWinWsl -Times 1
+        Should -Invoke Write-Warn -Times 1
+    }
+
+    It 'wsl 不在なら停止も試みない' {
+        Mock Test-Cmd { $false }
+        Mock Stop-BoochWinWsl {}
+        Invoke-BoochWinCompactWsl
+        Should -Invoke Stop-BoochWinWsl -Times 0
     }
 }
 

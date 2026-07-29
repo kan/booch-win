@@ -7,6 +7,7 @@ BeforeAll {
     $script:Root = Split-Path $PSScriptRoot -Parent
     $lib = Join-Path $script:Root 'lib'
     . (Join-Path $lib 'common.ps1')
+    . (Join-Path $lib 'system.ps1')    # Get-WslVhdxPath (Show-WslVhdxSize が使う。mock 対象)
     . (Join-Path $lib 'doctor.ps1')
 }
 
@@ -50,5 +51,50 @@ Describe 'Get-VersionNote' {
 
     It '現在版を取れないときは比較せず最新だけ出す' {
         Get-VersionNote -Current 'installed' -Latest '3.1.4' | Should -Match 'latest: 3\.1\.4'
+    }
+}
+
+Describe 'Show-DiskFree' {
+    BeforeEach { Mock Write-Host {}; Mock Write-Status {} }
+
+    It '閾値を下回れば WARN を返す (真偽値で消費側の集計に載せられる)' {
+        Mock Get-PSDrive { [pscustomobject]@{ Free = 10GB; Used = 440GB } }
+        Show-DiskFree -Drive C -WarnGB 20 | Should -BeTrue
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'WARN' } -Times 1
+    }
+
+    It '閾値を上回れば OK' {
+        Mock Get-PSDrive { [pscustomobject]@{ Free = 100GB; Used = 350GB } }
+        Show-DiskFree -Drive C -WarnGB 20 | Should -BeFalse
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'OK' } -Times 1
+    }
+
+    It '閾値 0 なら判定せず表示だけ' {
+        Mock Get-PSDrive { [pscustomobject]@{ Free = 1GB; Used = 449GB } }
+        Show-DiskFree -Drive C -WarnGB 0 | Should -BeFalse
+    }
+
+    It '取得できないドライブは SKIP (診断自体は落とさない)' {
+        Mock Get-PSDrive { $null }
+        Show-DiskFree -Drive Z -WarnGB 20 | Should -BeFalse
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'SKIP' } -Times 1
+    }
+}
+
+Describe 'Show-WslVhdxSize' {
+    BeforeEach { Mock Write-Host {}; Mock Write-Status {} }
+
+    It 'ディストロが無ければ SKIP' {
+        Mock Get-WslVhdxPath { @() }
+        { Show-WslVhdxSize } | Should -Not -Throw
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'SKIP' } -Times 1
+    }
+
+    It '各ディストロの vhdx サイズを 1 行ずつ出す' {
+        $f = Join-Path $TestDrive 'ext4.vhdx'
+        Set-Content -LiteralPath $f -Value 'x'
+        Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
+        Show-WslVhdxSize
+        Should -Invoke Write-Status -ParameterFilter { $Label -match 'Ubuntu' } -Times 1
     }
 }
