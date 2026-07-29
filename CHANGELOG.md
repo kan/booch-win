@@ -6,6 +6,24 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-29
+
+### Fixed
+- `Invoke-BoochWinCompactWsl` が **sparse な vhdx に対しても WSL を停止してから compact を
+  試み、必ず失敗していた**。VHD API は sparse ファイルを開けない（実機のエラー:
+  `Virtual hard disk files must be uncompressed and unencrypted and must not be sparse`）ので、
+  `Optimize-VHD` も `diskpart` も成功しえない。稼働中のコンテナ・シェルを無駄に落とすだけの
+  動作だったため、判定を先に行い、sparse なら **WSL を停止せずに** 状態を報告して終わる。
+  - sparse と compact は排他。sparse な vhdx はゲストの TRIM（WSL 内の `fstrim`）で実占有が
+    減るので、そもそも compact は不要（実測: `fstrim` 込みの掃除で C: の空きが 10GB → 72GB）。
+  - 非 sparse の vhdx だけが compact の対象。縮小後は sparse 化を案内する。
+- `Optimize-BoochWinVhdx` が sparse 判定を権限確認より先に行うようにした。昇格しても結果は
+  変わらないので、無駄な UAC プロンプトを出さない。
+
+### Added
+- `Test-FileSparse -Path <file>`（`lib/system.ps1`）: NTFS の sparse 属性判定。WSL の vhdx では
+  「自動解放されるが compact 不可（sparse）」と「compact が要る（非 sparse）」の分岐点になる。
+
 ## [0.9.0] - 2026-07-29
 
 ### Fixed
@@ -233,7 +251,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kan/booch-win/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kan/booch-win/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kan/booch-win/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kan/booch-win/compare/v0.6.6...v0.7.0

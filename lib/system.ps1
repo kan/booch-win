@@ -150,6 +150,16 @@ public class BoochWinFileSize {
     }
 }
 
+# ファイルが NTFS の sparse ファイルか。WSL の vhdx では重要な分岐点になる:
+#   sparse   → ゲストの TRIM (fstrim) で実占有が自動的に減る。一方 VHD API の制限で
+#              compact (Optimize-VHD / diskpart) は**使えない**
+#              ("Virtual hard disk files ... must not be sparse")
+#   非 sparse → 一度膨らんだら自動では減らない。減らすには compact が要る
+function Test-FileSparse {
+    param([Parameter(Mandatory)][string]$Path)
+    return ((Get-Item -LiteralPath $Path).Attributes -band [System.IO.FileAttributes]::SparseFile) -ne 0
+}
+
 # 登録済み WSL ディストリビューションの ext4.vhdx パスを列挙する。
 function Get-WslVhdxPath {
     $lxssRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'

@@ -88,12 +88,12 @@ Describe 'Invoke-BoochWinCompactWsl' {
         Should -Invoke Write-Warn -Times 1
     }
 
-    It 'ディストロが見つからなければ停止だけして抜ける' {
+    It 'ディストロが見つからなければ停止せず抜ける' {
         Mock Test-Cmd { $true }
         Mock Stop-BoochWinWsl {}    # 実際に WSL を落とさない
         Mock Get-WslVhdxPath { @() }
         { Invoke-BoochWinCompactWsl } | Should -Not -Throw
-        Should -Invoke Stop-BoochWinWsl -Times 1
+        Should -Invoke Stop-BoochWinWsl -Times 0
         Should -Invoke Write-Warn -Times 1
     }
 
@@ -104,17 +104,35 @@ Describe 'Invoke-BoochWinCompactWsl' {
         Should -Invoke Stop-BoochWinWsl -Times 0
     }
 
-    It '各 vhdx を Optimize-BoochWinVhdx へ渡し、実占有の前後を報告する' {
-        $f = Join-Path $TestDrive 'ext4.vhdx'
+    # sparse な vhdx は compact できない (VHD API の制限)。落としても失敗するだけなので、
+    # WSL を止めずに状態だけ報告する ← 実際に稼働中コンテナを無駄に殺した回帰のガード。
+    It 'すべて sparse なら WSL を止めず compact も試みない' {
+        $f = Join-Path $TestDrive 'sparse.vhdx'
         Set-Content -LiteralPath $f -Value 'x'
         Mock Test-Cmd { $true }
         Mock Stop-BoochWinWsl {}
         Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
+        Mock Test-FileSparse { $true }
         Mock Optimize-BoochWinVhdx { $true }
-        # 実占有は縮小の前後で変わる想定 (1 回目 100GB → 2 回目 60GB)。
-        $script:calls = 0
-        Mock Get-FileAllocatedSize { $script:calls++; if ($script:calls -eq 1) { 100GB } else { 60GB } }
+        Mock Get-FileAllocatedSize { 100GB }
         Invoke-BoochWinCompactWsl
+        Should -Invoke Stop-BoochWinWsl -Times 0
+        Should -Invoke Optimize-BoochWinVhdx -Times 0
+    }
+
+    It '非 sparse の vhdx は停止して Optimize-BoochWinVhdx へ渡し、前後を報告する' {
+        $f = Join-Path $TestDrive 'plain.vhdx'
+        Set-Content -LiteralPath $f -Value 'x'
+        Mock Test-Cmd { $true }
+        Mock Stop-BoochWinWsl {}
+        Mock Get-WslVhdxPath { @([pscustomobject]@{ Name = 'Ubuntu'; Vhdx = $f }) }
+        Mock Test-FileSparse { $false }
+        Mock Optimize-BoochWinVhdx { $true }
+        # 実占有は縮小の前後で変わる想定 (報告用の 1 回目 → compact 前 → compact 後)。
+        $script:calls = 0
+        Mock Get-FileAllocatedSize { $script:calls++; if ($script:calls -le 2) { 100GB } else { 60GB } }
+        Invoke-BoochWinCompactWsl
+        Should -Invoke Stop-BoochWinWsl -Times 1
         Should -Invoke Optimize-BoochWinVhdx -Times 1
         Should -Invoke Write-Ok -ParameterFilter { $Msg -match '40\.0 GB 解放' } -Times 1
     }
@@ -125,9 +143,19 @@ Describe 'Optimize-BoochWinVhdx' {
         Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
     }
 
-    # wsl.exe には compact 相当のオプションが無く、Optimize-VHD も diskpart も昇格が要る。
-    # 非昇格で走らせて「失敗」と出すのではなく、要件として先に弾く。
-    It '非昇格なら実行せず false を返す' {
+    # sparse は VHD API が開けない。昇格しても結果は変わらないので、権限確認より先に弾く
+    # (無駄な UAC プロンプトを出さないため)。
+    It 'sparse なら昇格を確認する前に false を返す' {
+        Mock Test-FileSparse { $true }
+        Mock Test-IsElevated { $true }
+        Optimize-BoochWinVhdx -Path 'X:\dummy.vhdx' | Should -BeFalse
+        Should -Invoke Test-IsElevated -Times 0
+        Should -Invoke Write-Warn -Times 1
+    }
+
+    # 非 sparse でも Optimize-VHD / diskpart はどちらも昇格が要る。
+    It '非 sparse かつ非昇格なら実行せず false を返す' {
+        Mock Test-FileSparse { $false }
         Mock Test-IsElevated { $false }
         Optimize-BoochWinVhdx -Path 'X:\dummy.vhdx' | Should -BeFalse
         Should -Invoke Write-Fail -Times 1

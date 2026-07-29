@@ -78,47 +78,51 @@ function Stop-BoochWinWsl {
     Start-Sleep -Seconds 2  # vhdx の解放を待つ
 }
 
-# WSL を停止して ext4.vhdx を縮小する (wsl --shutdown → 必要なら set-sparse → compact)。
-# WSL 内でファイルを消しても vhdx は自動では縮まないため、Windows 側の空きを取り戻すには
-# この操作が要る。WSL を落とすので破壊的: 消費側は専用サブコマンド (dotfiles-win compact-wsl)
-# か cleanup の明示フラグ (--compact-vhdx) からだけ呼ぶ。稼働中のコンテナ・シェルは止まる。
+# WSL の ext4.vhdx の実占有を減らす。取れる手段は vhdx が sparse かどうかで排他的に決まる:
+#
+#   sparse   → ゲストの TRIM (WSL 内の fstrim) で実占有が自動的に減る。VHD API の制限で
+#              compact は**適用できない** ("must not be sparse")。よって WSL を落とす必要も
+#              無いので、状態を報告して何もしない
+#   非 sparse → 自動では減らないので、WSL を停止 (vhdx をデタッチ) して compact する
+#
+# つまり「WSL を落とす」のは非 sparse の vhdx があるときだけ。無条件に落として失敗するのは
+# 稼働中のコンテナ・シェルを無駄に殺すだけなので、判定を先に行う。
 # 見出し行は消費側が出す (cleanup の節 / サブコマンドのタイトル)。
 function Invoke-BoochWinCompactWsl {
     if (-not (Test-Cmd 'wsl')) {
         Write-Warn 'wsl コマンドが見つかりません (WSL 未導入?)'
         return
     }
-    Stop-BoochWinWsl
 
     $vhdxs = Get-WslVhdxPath
     if (-not $vhdxs) {
         Write-Warn 'WSL ディストロが見つかりません (スキップ)'
         return
     }
-    Write-Info 'ヒント: 先に WSL 内で dotfiles cleanup (fstrim) を回すと最適化の効果が高まります'
+
     foreach ($v in $vhdxs) {
-        # 見るのは論理サイズ (Length) ではなく実占有。sparse な vhdx では両者が大きく食い違い、
-        # fstrim で解放した分は実占有にだけ現れる。
+        Write-Info ('{0}: 実占有 {1:N1} GB (論理 {2:N1} GB)' -f `
+            $v.Name, ((Get-FileAllocatedSize $v.Vhdx) / 1GB), ((Get-Item $v.Vhdx).Length / 1GB))
+    }
+
+    # compact が要る (= 非 sparse) のはどれか。
+    $targets = @($vhdxs | Where-Object { -not (Test-FileSparse $_.Vhdx) })
+    if ($targets.Count -eq 0) {
+        Write-Ok 'すべて sparse です。解放は WSL 内の fstrim で自動的に行われます'
+        Write-Info "回収するには WSL 内で 'dotfiles cleanup' (fstrim を含む) を回してください"
+        Write-Info 'sparse な vhdx に compact は適用できません (VHD API の制限)。WSL を停止せず終了します'
+        return
+    }
+
+    Stop-BoochWinWsl
+    foreach ($v in $targets) {
         $before = Get-FileAllocatedSize $v.Vhdx
-
-        # スパース化が未設定の時だけ実施する (--allow-unsafe 必須)。
-        # NTFS の SparseFile 属性で設定済みかを判定する。
-        $isSparse = ((Get-Item $v.Vhdx).Attributes -band [System.IO.FileAttributes]::SparseFile) -ne 0
-        if (-not $isSparse) {
-            Write-Info ('set-sparse {0} ...' -f $v.Name)
-            & wsl.exe --manage $v.Name --set-sparse true --allow-unsafe
-            if ($LASTEXITCODE -ne 0) {
-                Write-Fail ('{0}: set-sparse 失敗 (WSL が古い場合は wsl --update)' -f $v.Name)
-            }
-        } else {
-            Write-Ok ('{0}: 既にスパース化済み (fstrim した分は自動で解放されます)' -f $v.Name)
-        }
-
         Write-Info ('compacting {0} (実占有 {1:N1} GB)...' -f $v.Name, ($before / 1GB))
         if (Optimize-BoochWinVhdx -Path $v.Vhdx) {
             $after = Get-FileAllocatedSize $v.Vhdx
             Write-Ok ('{0}: 実占有 {1:N1} GB -> {2:N1} GB ({3:N1} GB 解放)' -f `
                 $v.Name, ($before / 1GB), ($after / 1GB), (($before - $after) / 1GB))
+            Write-Info ("以後の自動解放には sparse 化が有効です: wsl --manage {0} --set-sparse true --allow-unsafe" -f $v.Name)
         }
     }
 }
@@ -130,6 +134,14 @@ function Invoke-BoochWinCompactWsl {
 # 戻り値: 縮小を実行できたら $true。
 function Optimize-BoochWinVhdx {
     param([Parameter(Mandatory)][string]$Path)
+
+    # sparse なファイルは VHD API が開けない ("Virtual hard disk files must be uncompressed
+    # and unencrypted and must not be sparse")。昇格しても結果は変わらないので、権限確認より
+    # 先に弾く (無駄な UAC プロンプトを出さない)。sparse の場合は fstrim 側で解放される。
+    if (Test-FileSparse -Path $Path) {
+        Write-Warn 'sparse な vhdx は compact できません (VHD API の制限)。解放は WSL 内の fstrim で行われます'
+        return $false
+    }
 
     if (-not (Test-IsElevated)) {
         Write-Fail 'vhdx の縮小には管理者権限が必要です (管理者の PowerShell で実行してください)'
