@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-03
+
+### Changed
+- `Install-Textlint`（`lib/textlint.ps1`）が、`$SrcDir` に `package-lock.json` が無いときは
+  `npm install` に続けて `npm update` も走らせるようにした。`$DestDir` に残る lockfile は初回
+  install の副産物だが、`npm install` は**それが `package.json` のレンジを満たす限り古い版を
+  保持する**ため、レンジ内に新版が出ても再実行で永久に前進しなかった（textlint が `^15.7.1` の
+  まま 15.8.0 へ上がらず、doctor が毎回「更新あり」を出し続けた）。`$SrcDir` に lockfile が
+  **ある**ときは意図された版固定とみなし従来どおり install のみ。レンジ外（メジャー跨ぎ）は
+  動かないので、`package.json` の手 bump が要る点は変わらない。booch の
+  `booch_npm_local_install`（1.10.0）と同じ判断で、Linux/Windows の版追従を揃える。
+
+### Added
+- `tests/textlint.Tests.ps1`: `Install-Textlint` の版追従分岐（src の lockfile 有無で
+  install のみ / install + update）を検証する。npm は関数でシャドウして引数だけ記録する。
+
 ## [0.11.0] - 2026-07-29
 
 ### Fixed
@@ -274,7 +290,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/kan/booch-win/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kan/booch-win/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kan/booch-win/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kan/booch-win/compare/v0.8.0...v0.9.0

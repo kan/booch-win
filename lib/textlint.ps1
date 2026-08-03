@@ -14,6 +14,14 @@
 
 # $SrcDir (repo の textlint/) の package.json を $DestDir へ同期 install し、
 # .textlintrc.json を配置する。booch_npm_local_install + job_textlint の Windows 版。
+#
+# $SrcDir が package-lock.json を持たないときは install に続けて update も走らせる
+# (booch の booch_npm_local_install と同じ判断。Linux/Windows で版の追従を揃える)。
+# $DestDir に残る lockfile は初回 install の副産物だが、npm install は**それが
+# package.json のレンジを満たす限り古い版を保持する**ため、レンジ内に新版が出ても
+# 再実行で永久に前進しない (textlint が ^15.7.1 のまま 15.8.0 へ上がらなかった実例)。
+# src に lockfile が**ある**ときは意図された版固定とみなし install のみ。レンジ外
+# (メジャー跨ぎ) は動かないので、package.json の手 bump が要る点は変わらない。
 function Install-Textlint {
     param(
         [Parameter(Mandatory)][string]$SrcDir,
@@ -32,14 +40,20 @@ function Install-Textlint {
     Write-Info 'Installing/updating textlint...'
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
     Copy-Item $pkg $DestDir -Force
+    # src の lockfile は「意図された版固定」の signal。あるときは尊重して update しない。
     $lock = Join-Path $SrcDir 'package-lock.json'
-    if (Test-Path $lock) { Copy-Item $lock $DestDir -Force }
+    $pinned = Test-Path $lock
+    if ($pinned) { Copy-Item $lock $DestDir -Force }
 
     # cwd を汚さず $DestDir で install する。npm は警告 / 進捗を stderr に書くため
     # Invoke-Quiet で無害化する (詳細は lib/common.ps1)。
     Push-Location $DestDir
     try {
         Invoke-Quiet { & npm install --no-audit --no-fund 2>&1 | Out-Null }
+        if (-not $pinned) {
+            # レンジ内最新へ追従させる (dest の lockfile が古い版を塞ぐのを解く)。
+            Invoke-Quiet { & npm update --no-audit --no-fund 2>&1 | Out-Null }
+        }
     } finally {
         Pop-Location
     }
