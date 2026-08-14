@@ -6,6 +6,61 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-14
+
+### Changed
+- **破壊的変更**: `Test-WingetInstalled` を廃止し、3 値を返す `Get-WingetInstallState`
+  （`'Installed'` / `'NotInstalled'` / `'Unknown'`）へ置き換えた。真偽値では「判定できなかった」を
+  表せず、`$false` へ丸めれば install が、`$true` へ丸めれば upgrade が走る——どちらもソース参照で
+  同じく止まりうるため、丸めずに第 3 の状態として返す。
+- 副作用の無い読み取り系 winget 呼び出し（`winget list` / `winget export`）に上限を設けた
+  （既定 60 秒。エントリ側の `$Script:WingetReadTimeoutSec` で変更、`--no-timeout` で無制限）。
+  winget は起動のたびにソースインデックス（`cdn.winget.microsoft.com`）を参照しうるため、そこが
+  詰まると応答が返らず、`Install-WingetPackages` はパッケージ数ぶん待ちが伸びていた。
+  `install` / `upgrade` には**手を入れない** — インストーラーの実行中に kill するとパッケージが
+  中途半端な状態で残り、上限で得られるものより失うものが大きい。
+- `Install-WingetPackages` は導入状態が `'Unknown'` のパッケージを警告付きでスキップする。
+  実行が 1 回飛ぶだけで、冪等なので次回の実行が拾う。
+- `Get-WingetInstalledIds` はタイムアウト・起動失敗のときも既存契約どおり空配列を返す
+  （`Show-WingetUntracked` は従来どおり SKIP 表示になる）。
+- `Set-InputMethod` は、TIP の実体が登録されていなければ警告するようになった。設定が既に
+  正しい場合（従来は早期 return していた経路）でも見る — そここそが「設定は正しいのに
+  入力できない」状態そのものだから。修復はしない（消費側の担当）。
+
+### Added
+- TSF TIP の**登録の実体**を判定する API を `lib/keyboard.ps1` に追加した。既存の
+  `Test-InputMethodCurrent` は言語一覧と既定入力、つまり入力方式の「設定」しか見ておらず、
+  設定が指す TIP の実体が消えても言語一覧には TIP 文字列が残るため true のままになる。
+  IME 本体を使用中に upgrade すると実際に起きる状態（インストーラーが COM 登録を次回ログオンへ
+  先送りする／新版を入れた後に旧版のアンインストーラーが同じ CLSID の登録を消す）で、
+  **設定は正しいのに日本語入力が丸ごと死ぬ**のに doctor は「正常」と表示していた。
+  - `Get-InputMethodTipId`: TIP 文字列 `<言語 ID 16進4桁>:{CLSID}{PROFILE}` を分解する。
+    判定に要る情報はすべてここから導けるので、消費側は CLSID を二重管理しなくてよい。
+  - `Get-InputMethodTipRegistryPath`: 64bit / 32bit（`WOW6432Node`）の `InProcServer32` と
+    `CTF\TIP\...\LanguageProfile`（言語 ID を 8 桁ゼロ埋めした `0x00000411` 形式）のパス。
+  - `Get-InputMethodTipState`: 登録の実体を読む。「どちらのビューを要求するか」は
+    `$Dll64` / `$Dll32` で消費側が渡す（TIP DLL の在り処は IME 実装ごとに違い、片方しか
+    無い機で誤検知しないため）。
+  - `Get-InputMethodTipProblem`: State だけで決まる純粋関数。噛み合わない理由の一覧を返す。
+  - `Test-InputMethodTipInstalled` / `Test-InputMethodTipMissing` /
+    `Test-InputMethodTipRegistered`。
+  - **修復（`regsvr32` での再登録）は持たない** — TIP DLL の場所が IME 実装ごとに違うため、
+    booch-win は判定まで、入れ直しは消費側に残す。
+- `Invoke-WingetRead`: 読み取り系 winget を上限付きで実行し `@{ TimedOut; ExitCode }` を返す seam。
+  出力はコンソールへ出さず捨てる（表示が要らない経路なので、`Invoke-Winget` のようにコンソール
+  所有権を渡す必要が無い。むしろ渡すと中断できなくなる）。
+- `Get-WingetReadTimeout`: 読み取り系の実効タイムアウトを解決する（既定 60 秒 →
+  `$Script:WingetReadTimeoutSec` → `Get-EffectiveTimeout`）。
+- `tests/winget.Tests.ps1` に `Get-WingetReadTimeout` / `Get-WingetInstallState` /
+  `Get-WingetInstalledIds` / `Install-WingetPackages` の分岐検証を追加（`Invoke-WingetRead` を
+  mock して純粋に検証する）。
+- `tests/keyboard.Tests.ps1` に TIP 登録判定の検証を追加（TIP 文字列の分解・レジストリパス・
+  不整合の判定・弱い判定、`Set-InputMethod` の警告）。
+
+### Fixed
+- `Install-WingetPackages` のヘッダコメントが `Get-WingetInstalledIds` の上に紛れていたため、
+  `booch-win help winget` が両者の説明を取り違えていたのを直した。
+
 ## [0.12.0] - 2026-08-03
 
 ### Changed
@@ -290,7 +345,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/kan/booch-win/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kan/booch-win/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kan/booch-win/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kan/booch-win/compare/v0.9.0...v0.10.0

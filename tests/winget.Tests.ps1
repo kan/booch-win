@@ -1,13 +1,16 @@
 ﻿#requires -Version 5.1
-# lib/winget.ps1 を検証する (Pester 5)。winget.exe を叩く関数は副作用の塊なので、
-# ここでは終了コードの分類 (Test-WingetUpgradeNoop) だけを純粋に検証する。
-# ここを取り違えると「更新の失敗を毎回無視する」か「最新のたびに警告を出す」の
-# どちらかになるため、境界を明示的に固定しておく。
+# lib/winget.ps1 を検証する (Pester 5)。winget.exe を実際に叩く部分 (Invoke-WingetRead) は
+# 副作用の塊なので seam として mock し、その戻り値をどう解釈するか — 終了コードの分類
+# (Test-WingetUpgradeNoop)、3 値の導入判定 (Get-WingetInstallState)、判定不能時の
+# skip (Install-WingetPackages) — を純粋に検証する。
+# ここを取り違えると「更新の失敗を毎回無視する」か「最新のたびに警告を出す」、あるいは
+# 「応答が返らない winget を無限に待つ」のいずれかになるため、境界を明示的に固定しておく。
 
 BeforeAll {
     $script:Root = Split-Path $PSScriptRoot -Parent
     $lib = Join-Path $script:Root 'lib'
     . (Join-Path $lib 'common.ps1')
+    . (Join-Path $lib 'system.ps1')    # Get-EffectiveTimeout (Get-WingetReadTimeout が使う)
     . (Join-Path $lib 'winget.ps1')
 }
 
@@ -30,5 +33,124 @@ Describe 'Test-WingetUpgradeNoop' {
     It '未知の非 0 は失敗として扱う' {
         Test-WingetUpgradeNoop 1 | Should -BeFalse
         Test-WingetUpgradeNoop -1 | Should -BeFalse
+    }
+}
+
+Describe 'Get-WingetReadTimeout' {
+    AfterEach {
+        Remove-Variable -Name WingetReadTimeoutSec -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name DisableTimeout       -Scope Script -ErrorAction SilentlyContinue
+    }
+
+    It 'エントリ側が何も定義していなければ既定の 60 秒' {
+        Get-WingetReadTimeout | Should -Be 60
+    }
+
+    It 'エントリ側の $Script:WingetReadTimeoutSec を優先する' {
+        $Script:WingetReadTimeoutSec = 5
+        Get-WingetReadTimeout | Should -Be 5
+    }
+
+    It '--no-timeout ($Script:DisableTimeout) では 0 (無制限) を返す' {
+        $Script:WingetReadTimeoutSec = 5
+        $Script:DisableTimeout = $true
+        Get-WingetReadTimeout | Should -Be 0
+    }
+}
+
+Describe 'Get-WingetInstallState' {
+    It 'exit 0 は Installed' {
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = 0 } }
+        Get-WingetInstallState 'Foo.Bar' | Should -Be 'Installed'
+    }
+
+    It '非 0 は NotInstalled' {
+        # NO_APPLICATIONS_FOUND。未導入の通常経路。
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = -1978335212 } }
+        Get-WingetInstallState 'Foo.Bar' | Should -Be 'NotInstalled'
+    }
+
+    It 'タイムアウトは Unknown (未導入へ丸めない)' {
+        Mock Invoke-WingetRead { @{ TimedOut = $true; ExitCode = $null } }
+        Get-WingetInstallState 'Foo.Bar' | Should -Be 'Unknown'
+    }
+
+    It '起動失敗 (winget.exe が無い) も Unknown' {
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = $null } }
+        Get-WingetInstallState 'Foo.Bar' | Should -Be 'Unknown'
+    }
+
+    It '省略時は Get-WingetReadTimeout の値を渡す' {
+        Mock Get-WingetReadTimeout { 42 }
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = 0 } }
+        Get-WingetInstallState 'Foo.Bar' | Out-Null
+        Should -Invoke Invoke-WingetRead -Times 1 -ParameterFilter { $TimeoutSec -eq 42 }
+    }
+
+    It '明示した TimeoutSec はそのまま使う' {
+        Mock Get-WingetReadTimeout { 42 }
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = 0 } }
+        Get-WingetInstallState 'Foo.Bar' -TimeoutSec 7 | Out-Null
+        Should -Invoke Invoke-WingetRead -Times 1 -ParameterFilter { $TimeoutSec -eq 7 }
+    }
+}
+
+Describe 'Get-WingetInstalledIds' {
+    It 'export した JSON から PackageIdentifier を集める' {
+        Mock Invoke-WingetRead {
+            # 実物と同じく -o の次の引数が出力先。mock 側でそこへ JSON を置く。
+            $out = $WingetArgs[[array]::IndexOf($WingetArgs, '-o') + 1]
+            $json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Foo.Bar"},{"PackageIdentifier":"Baz.Qux"}]}]}'
+            Set-Content -LiteralPath $out -Value $json -Encoding UTF8
+            @{ TimedOut = $false; ExitCode = 0 }
+        }
+        $ids = Get-WingetInstalledIds
+        $ids | Should -Be @('Foo.Bar', 'Baz.Qux')
+    }
+
+    It 'タイムアウトなら空配列 (途中まで書かれた JSON を読まない)' {
+        Mock Invoke-WingetRead {
+            $out = $WingetArgs[[array]::IndexOf($WingetArgs, '-o') + 1]
+            Set-Content -LiteralPath $out -Value '{"Sources":[{"Packages":[{"PackageIdentifier":"Foo.Bar"}' -Encoding UTF8
+            @{ TimedOut = $true; ExitCode = $null }
+        }
+        @(Get-WingetInstalledIds).Count | Should -Be 0
+    }
+
+    It '起動失敗なら空配列' {
+        Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = $null } }
+        @(Get-WingetInstalledIds).Count | Should -Be 0
+    }
+}
+
+Describe 'Install-WingetPackages' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
+        Mock Invoke-Winget { 0 }
+    }
+
+    It '導入済みなら upgrade を呼ぶ' {
+        Mock Get-WingetInstallState { 'Installed' }
+        Install-WingetPackages -Packages @(@{ Id = 'Foo.Bar'; Cmd = 'foo' })
+        Should -Invoke Invoke-Winget -Times 1 -ParameterFilter { $WingetArgs[0] -eq 'upgrade' }
+    }
+
+    It '未導入なら install を呼ぶ' {
+        Mock Get-WingetInstallState { 'NotInstalled' }
+        Install-WingetPackages -Packages @(@{ Id = 'Foo.Bar'; Cmd = 'foo' })
+        Should -Invoke Invoke-Winget -Times 1 -ParameterFilter { $WingetArgs[0] -eq 'install' }
+    }
+
+    It '判定不能なら winget を一切叩かず警告して次へ進む' {
+        Mock Get-WingetInstallState { if ($Id -eq 'Slow.One') { 'Unknown' } else { 'NotInstalled' } }
+        Install-WingetPackages -Packages @(
+            @{ Id = 'Slow.One'; Cmd = 'slow' },
+            @{ Id = 'Foo.Bar';  Cmd = 'foo' }
+        )
+        # skip したパッケージでは install も upgrade も走らない (= 呼び出しは後続の 1 回だけ)。
+        Should -Invoke Invoke-Winget -Times 1
+        Should -Invoke Invoke-Winget -Times 1 -ParameterFilter { $WingetArgs -contains 'Foo.Bar' }
+        # skip は黙って起きない (次回の実行で拾う旨をログに残す)。
+        Should -Invoke Write-Warn -Times 1 -ParameterFilter { $Msg -like '*Slow.One*' }
     }
 }

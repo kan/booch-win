@@ -26,9 +26,10 @@ try {
 } catch {}
 
 # lib が参照するタイムアウト設定 (Get-EffectiveTimeout が読む)。--no-timeout で無制限化。
-$Script:JobTimeoutSec  = 120
-$Script:ApiTimeoutSec  = 10
-$Script:DisableTimeout = $false
+$Script:JobTimeoutSec        = 120  # ダウンロード等の長め
+$Script:ApiTimeoutSec        = 10   # GitHub API など軽い呼び出し
+$Script:WingetReadTimeoutSec = 60   # winget の読み取り系 (list / export) 1 回ぶん
+$Script:DisableTimeout       = $false
 
 # 引数解析: フラグを除いた最初の非フラグ語をサブコマンドにする (既定 setup)。
 $Cmd = $null
