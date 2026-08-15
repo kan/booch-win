@@ -18,6 +18,12 @@ function Get-ClaudeVersion {
     return $line.Trim()
 }
 
+# 実行中の Claude Code プロセスを列挙する (未起動なら空配列)。
+# npm でのグローバル更新は実行中の claude.exe を置き換えられないため、その判定に使う。
+function Get-ClaudeProcess {
+    return @(Get-Process -Name 'claude' -ErrorAction SilentlyContinue)
+}
+
 # Claude Code 本体を導入/更新する。導入済みなら claude update、失敗時や
 # 未導入時は npm でグローバル導入する (node/npm は winget で導入済み前提)。
 # 版は導入の前後で取り直して報告する。後の版だけを見ると更新しても
@@ -29,7 +35,16 @@ function Install-ClaudeCode {
         Write-Info 'Updating Claude Code...'
         Invoke-Quiet { & claude update 2>&1 | Out-Null }
         if ($LASTEXITCODE -ne 0 -and (Test-Cmd 'npm')) {
-            & npm install -g '@anthropic-ai/claude-code'
+            # npm はグローバル更新の前に既存パッケージを一時ディレクトリへ退避コピーするので、
+            # claude.exe が起動したままだと copyfile が EBUSY で落ちる (Claude Code の
+            # セッションから setup を回すと必ず踏む)。どのみち成功しないので、生の npm エラー
+            # を出さずにスキップし、claude を閉じた後の再実行へ委ねる。
+            $running = Get-ClaudeProcess
+            if ($running.Count -gt 0) {
+                Write-Warn "Claude Code: 実行中 ($($running.Count) プロセス) のため npm での更新をスキップ (claude 終了後に再実行)"
+            } else {
+                & npm install -g '@anthropic-ai/claude-code'
+            }
         }
         $new = Get-ClaudeVersion
         if ($old -and $new -and $old -ne $new) {

@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-15
+
+### Changed
+- `Install-ClaudeCode` は、`claude update` が失敗したときの npm フォールバックを
+  **claude.exe が実行中ならスキップして警告する**ようになった。npm はグローバル更新の前に
+  既存パッケージを一時ディレクトリへ退避コピーするため、実行中の claude.exe を掴んだまま
+  では `EBUSY: resource busy or locked, copyfile ...\claude.exe` で必ず落ちる。Claude Code の
+  セッションから setup を回すと毎回この生の npm エラーが出るが、成功する見込みが無い実行
+  なので、警告 1 行に畳んで claude 終了後の再実行へ委ねる。
+
+### Added
+- `Get-ClaudeProcess`: 実行中の Claude Code プロセスを列挙する（未起動なら空配列）。
+
 ## [0.13.0] - 2026-08-14
 
 ### Changed
@@ -345,7 +358,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/kan/booch-win/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kan/booch-win/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kan/booch-win/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kan/booch-win/compare/v0.10.0...v0.11.0

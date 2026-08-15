@@ -100,6 +100,9 @@ Describe 'Install-ClaudeCode' {
         Mock Write-Ok { $script:Ok += $Msg }
         Mock Write-Info { }
         Mock Write-Fail { $script:Ok += "FAIL: $Msg" }
+        Mock Write-Warn { $script:Ok += "WARN: $Msg" }
+        # 既定は claude 未実行 (npm フォールバックが走れる状態)。
+        Mock Get-ClaudeProcess { @() }
         # update / npm は呼ばない。$LASTEXITCODE を 0 にして npm フォールバックへ落ちないようにする。
         Mock Invoke-Quiet { $global:LASTEXITCODE = 0 }
         Mock npm { $global:LASTEXITCODE = 0 }
@@ -118,6 +121,26 @@ Describe 'Install-ClaudeCode' {
         Mock Get-ClaudeVersion { '2.1.220' }
         Install-ClaudeCode
         $script:Ok | Should -Be @('Claude Code: already installed (2.1.220)')
+    }
+
+    It 'claude update が失敗したら npm でグローバル更新する' {
+        Mock Test-Cmd { $true }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1 }
+        Mock Get-ClaudeVersion { '2.1.220' }
+        Install-ClaudeCode
+        Should -Invoke npm -Times 1
+    }
+
+    It 'claude 実行中は npm フォールバックを走らせず警告する' {
+        # npm はグローバル更新の前に既存パッケージを退避コピーするため、実行中の
+        # claude.exe があると EBUSY で必ず落ちる。生のエラーを出さずスキップする。
+        Mock Test-Cmd { $true }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1 }
+        Mock Get-ClaudeVersion { '2.1.220' }
+        Mock Get-ClaudeProcess { @('proc1', 'proc2') }
+        Install-ClaudeCode
+        Should -Invoke npm -Times 0
+        $script:Ok[0] | Should -BeLike 'WARN: Claude Code: 実行中 (2 プロセス)*'
     }
 
     It '未導入からの導入は installed (版) を報告する' {
