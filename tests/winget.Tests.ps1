@@ -58,6 +58,37 @@ Describe 'Get-WingetReadTimeout' {
     }
 }
 
+Describe 'Invoke-WingetRead (実プロセス)' {
+    # ここだけは seam を挟まず実プロセスを起動する。終了コードを取れるかどうかは
+    # Start-Process の使い方そのものに依存していて、Invoke-WingetRead を mock した
+    # 契約テストでは絶対に捕まらないため (実際、リダイレクト併用で ExitCode が $null に
+    # なり、[int] キャストで 0 = 成功へ化ける回帰を実機まで検出できなかった)。
+    # winget.exe は CI にも開発機にも無いことがあるので cmd.exe で代用する。
+
+    It 'リダイレクトを併用しても非 0 の終了コードを取り落とさない' {
+        $r = Invoke-WingetRead -FilePath 'cmd.exe' -WingetArgs @('/c', 'exit 3')
+        $r.TimedOut | Should -BeFalse
+        $r.ExitCode | Should -Be 3
+    }
+
+    It '成功 (exit 0) と失敗を取り違えない' {
+        $r = Invoke-WingetRead -FilePath 'cmd.exe' -WingetArgs @('/c', 'exit 0')
+        $r.ExitCode | Should -Be 0
+    }
+
+    It '上限を超えたら TimedOut で、終了コードは名乗らない' {
+        $r = Invoke-WingetRead -FilePath 'cmd.exe' -WingetArgs @('/c', 'ping -n 20 127.0.0.1') -TimeoutSec 1
+        $r.TimedOut | Should -BeTrue
+        $r.ExitCode | Should -BeNullOrEmpty
+    }
+
+    It '起動できなければ ExitCode は $null (0 へ丸めない)' {
+        $r = Invoke-WingetRead -FilePath 'booch-win-no-such-exe.exe' -WingetArgs @('--version')
+        $r.TimedOut | Should -BeFalse
+        $r.ExitCode | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Get-WingetInstallState' {
     It 'exit 0 は Installed' {
         Mock Invoke-WingetRead { @{ TimedOut = $false; ExitCode = 0 } }

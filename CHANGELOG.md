@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-19
+
+### Fixed
+- `Invoke-WingetRead` が winget の終了コードを取り落とし、**未導入のパッケージでも
+  `Get-WingetInstallState` が `'Installed'` を返していた**のを修正した。PS5.1 の
+  `Start-Process -PassThru` は、リダイレクト（`-RedirectStandardOutput` /
+  `-RedirectStandardError`）を併用すると返す Process がプロセスハンドルを保持せず、子の終了後に
+  `.ExitCode` が `$null` になる。それを `[int]` へキャストしていたので 0、つまり「exit 0 =
+  導入済み」に化けていた。起動直後に `.Handle` を評価してハンドルを開き、それでも取れなければ
+  `$null` のまま返す（0 へ丸めない → 呼び出し側の `'Unknown'` 経路に乗る）。
+  読み取り系にタイムアウトを入れてリダイレクトを併用した 0.13.0 からの回帰で、既に全部
+  導入済みの機では誤判定と正解が一致するため表面化せず、**利用側が `$WingetPackages` に
+  新しいパッケージを足したときだけ**「install されず upgrade が走り、
+  `NO_APPLICATIONS_FOUND`（0x8A150014）で毎回失敗して永久に入らない」という形で出ていた。
+
+### Added
+- `Invoke-WingetRead` に `-FilePath`（既定 `winget.exe`）。終了コードを取れるかどうかが
+  `Start-Process` の使い方そのものに依存し、`Invoke-WingetRead` を mock した契約テストでは
+  捕まらないため、実プロセスで回帰を突けるようにする（`tests/winget.Tests.ps1` が `cmd.exe` で
+  終了コード・タイムアウト・起動失敗を検証する）。
+
 ## [0.14.0] - 2026-08-15
 
 ### Changed
@@ -358,7 +379,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/kan/booch-win/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kan/booch-win/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kan/booch-win/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kan/booch-win/compare/v0.11.0...v0.12.0

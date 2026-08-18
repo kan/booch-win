@@ -68,8 +68,13 @@ function Get-WingetReadTimeout {
 # 副作用の無い読み取り系 winget を、上限付きで実行する。戻り値は
 # @{ TimedOut = [bool]; ExitCode = [int] または $null }。
 #   TimedOut = $true            : 上限を超えたので winget を終了させた
-#   ExitCode = $null            : 起動そのものに失敗した (winget.exe が無い等)
+#   ExitCode = $null            : 起動そのものに失敗した (winget.exe が無い等)、
+#                                 または終了コードを取得できなかった
 # どちらも「判定できなかった」であり、呼び出し側は成否のどちらかへ丸めずに扱うこと。
+#
+# $FilePath は通常 'winget.exe' のまま。差し替えを許すのは、終了コードを取れるかどうかが
+# Start-Process の使い方に依存する (下の .Handle 参照) ので、winget を前提にせず実プロセスで
+# 回帰を突けるようにするため。
 #
 # 出力はコンソールへ出さず一時ファイルへ捨てる。表示が要らない読み取り専用の経路
 # なので、Invoke-Winget のようにコンソール所有権を渡す必要が無い (むしろ渡すと
@@ -78,19 +83,28 @@ function Get-WingetReadTimeout {
 function Invoke-WingetRead {
     param(
         [Parameter(Mandatory)][string[]]$WingetArgs,
-        [int]$TimeoutSec = 0
+        [int]$TimeoutSec = 0,
+        [string]$FilePath = 'winget.exe'
     )
     $stem   = Join-Path $env:TEMP ('winget-read-' + [Guid]::NewGuid().ToString('N'))
     $outLog = "$stem.out.log"
     $errLog = "$stem.err.log"
     try {
-        $proc = Start-Process -FilePath 'winget.exe' -ArgumentList $WingetArgs `
+        $proc = Start-Process -FilePath $FilePath -ArgumentList $WingetArgs `
             -NoNewWindow -PassThru `
             -RedirectStandardOutput $outLog -RedirectStandardError $errLog
     } catch {
         Remove-Item $outLog, $errLog -Force -ErrorAction SilentlyContinue
         return @{ TimedOut = $false; ExitCode = $null }
     }
+    # PS5.1 の Start-Process -PassThru は、リダイレクトを併用すると返す Process が
+    # プロセスハンドルを保持しない。ハンドルが無いまま子が終了すると .ExitCode は $null に
+    # なり、[int] へキャストすれば 0 — つまり「成功」に化ける。Get-WingetInstallState は
+    # それを exit 0 = 導入済みと読むので、未導入のパッケージまで 'Installed' と判定され、
+    # install ではなく upgrade が走って NO_APPLICATIONS_FOUND で毎回失敗する。
+    # 起動直後に .Handle を評価してハンドルを開いておけば、終了後も .ExitCode を読める。
+    # 取れなくても致命ではない (下で $null のまま返り 'Unknown' 扱いになる) ので握る。
+    try { $null = $proc.Handle } catch { Write-Verbose "Handle の取得に失敗: $_" }
     try {
         if ($TimeoutSec -gt 0 -and -not $proc.WaitForExit($TimeoutSec * 1000)) {
             # 待っている間に自力で終わっていることがある (Kill は既に終了したプロセスで
@@ -100,10 +114,15 @@ function Invoke-WingetRead {
             return @{ TimedOut = $true; ExitCode = $null }
         }
         # 引数無しの WaitForExit は「子プロセスの終了」に加えて非同期の出力
-        # ストリームの終端まで待つ。時間指定版の後にもう一度呼ぶことで ExitCode を
-        # 確定させる (PS5.1 で ExitCode が $null になる事故を避ける)。
+        # ストリームの終端まで待つ。時間指定版の後にもう一度呼ぶことで、出力を取り
+        # こぼさずに終了を確定させる。
         $proc.WaitForExit()
-        return @{ TimedOut = $false; ExitCode = [int]$proc.ExitCode }
+        # ここで $null なら「終了コードを取得できなかった」。[int] へ丸めると 0 = 成功に
+        # なってしまうので、$null のまま返して呼び出し側の判定不能経路へ渡す。
+        $code = $null
+        try { $code = $proc.ExitCode } catch { Write-Verbose "ExitCode の取得に失敗: $_" }
+        if ($null -eq $code) { return @{ TimedOut = $false; ExitCode = $null } }
+        return @{ TimedOut = $false; ExitCode = [int]$code }
     } finally {
         Remove-Item $outLog, $errLog -Force -ErrorAction SilentlyContinue
     }
