@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-25
+
+### Added
+- `lib/git.ps1`: 複数 git repo を一括で ff-only pull する `Invoke-BoochWinGitPullRepos`
+  （と 1 repo 版 `Update-BoochWinGitRepo`）。Linux 側 booch の `booch_git_pull_repos` /
+  `booch_git_pull_ff_clean` に対応する Windows 版で、消費側は「基準ディレクトリ・repo 名・
+  許可ブランチ」だけを渡す。`.git` が無い対象は黙って除外し（clone していないマシンで
+  警告を出さないため）、許可ブランチ外・作業ツリーが dirty な repo には触らない。
+  更新有無の判定は pull 前後の HEAD sha 比較で行い、`Already up to date` の文言照合に
+  頼らない（日本語 locale で翻訳されるため）。実 git を叩く箇所は seam
+  （`Get-BoochWinGitBranch` / `Test-BoochWinGitDirty` / `Get-BoochWinGitHead` /
+  `Invoke-BoochWinGitFfPull`）に切り出してある。
+
 ## [0.15.0] - 2026-08-19
 
 ### Fixed
@@ -379,7 +392,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/kan/booch-win/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kan/booch-win/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kan/booch-win/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kan/booch-win/compare/v0.12.0...v0.13.0
