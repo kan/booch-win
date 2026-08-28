@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 #
-# lib/winget.ps1: 汎用機構 — winget 呼び出しと PATH 操作、パッケージ導入ループ
+# lib/winget.ps1: 汎用機構 — winget 呼び出し / PATH 操作 / パッケージ導入 / 設定の更新
 #
 # dotfiles-win.ps1 から dot-source される。どのパッケージを入れるか
 # ($WingetPackages) は個人選択なので dotfiles-win.config.ps1。詳細は #6。
@@ -270,4 +270,134 @@ function Install-WingetPackages {
             }
         }
     }
+}
+
+# winget の設定ファイル (settings.json) のパスを返す。winget は MSIX 版 (App Installer)
+# と非パッケージ版で置き場が違うので、実在するディレクトリのほうを優先し、どちらも
+# 無ければ MSIX 版の既定を返す ($env:LOCALAPPDATA が無ければ '')。
+function Get-WingetSettingsPath {
+    if (-not $env:LOCALAPPDATA) { return '' }
+    $dirs = @(
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Settings')
+    )
+    foreach ($d in $dirs) {
+        if (Test-Path -LiteralPath $d) { return (Join-Path $d 'settings.json') }
+    }
+    return (Join-Path $dirs[0] 'settings.json')
+}
+
+# settings.json のテキストへ $Settings のキーだけを再帰的にマージし、
+# @{ Changed = [bool]; Json = [string] } を返す (Linux booch の TOML キー単位更新と同じ
+# 「他キーを壊さない」方針の JSON 版)。$Settings の値がハッシュテーブルならそのキーだけ
+# 下位へ降りて設定し、それ以外 (スカラー・配列) は丸ごと置き換える。
+#
+# Changed はマージ前後を同じ整形で直列化して比べた結果なので、インデント等の整形差だけ
+# では真にならない (無用な書き戻しを防ぐ)。JSON として読めないテキストは
+# ConvertFrom-Json の例外をそのまま投げる — 握って空オブジェクトから作り直すと、手で
+# 書いたコメント付き (winget が許す JSONC) の設定を丸ごと消してしまうため、呼び出し側に
+# 「触らない」判断をさせる。
+function Merge-WingetSettingsJson {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Json,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings
+    )
+    # JSON 由来の PSCustomObject を順序付きハッシュテーブルへ写す。[ordered] なのはキー順を
+    # 保つため — PS5.1 の通常のハッシュテーブルは順序不定で、書き戻すたびに既存のキーが
+    # 並び替わって差分がノイズになる。新しい入れ物へ写すので深いコピーにもなる (マージ前の
+    # 状態を比較用に残せる)。
+    function ToOrderedNode($node) {
+        if ($node -is [System.Management.Automation.PSCustomObject]) {
+            $h = [ordered]@{}
+            foreach ($p in $node.PSObject.Properties) { $h[$p.Name] = ToOrderedNode $p.Value }
+            return $h
+        }
+        if ($node -is [System.Collections.IDictionary]) {
+            $h = [ordered]@{}
+            foreach ($k in @($node.Keys)) { $h[[string]$k] = ToOrderedNode $node[$k] }
+            return $h
+        }
+        if ($node -is [object[]]) { return @($node | ForEach-Object { ToOrderedNode $_ }) }
+        return $node
+    }
+    # 双方がオブジェクトのときだけ下位へ降りる。片方がスカラーなら型が変わっているので
+    # 置き換える (古い形の値を残すと winget が読めない設定になりうる)。
+    function MergeIntoNode($target, $source) {
+        foreach ($k in @($source.Keys)) {
+            $key = [string]$k
+            $val = $source[$k]
+            if ($val -is [System.Collections.IDictionary] -and $target[$key] -is [System.Collections.IDictionary]) {
+                MergeIntoNode $target[$key] $val
+            } else {
+                $target[$key] = ToOrderedNode $val
+            }
+        }
+    }
+
+    $before = [ordered]@{}
+    $text = $Json.TrimStart([char]0xFEFF).Trim()
+    if ($text) {
+        # PS7 の ConvertFrom-Json はコメント付き (JSONC) を読めてしまい、パース → 再直列化で
+        # コメントが落ちる。winget は settings.json のコメントを許すので、行頭コメントを
+        # 見つけた時点で投げて呼び出し側に触らせない。PS5.1 はそもそもパースできず例外に
+        # なるので、版によって「消える / 消えない」が分かれるのを防ぐ意味もある。
+        # 行頭 (前が空白のみ) に限るのは、値の中の URL ("https://...") を誤検出しないため。
+        foreach ($line in ($text -split "`r?`n")) {
+            if ($line -match '^\s*(//|/\*)') {
+                throw 'コメント付き (JSONC) の設定は自動更新の対象外です'
+            }
+        }
+        $parsed = ToOrderedNode (ConvertFrom-Json $text)
+        if (-not ($parsed -is [System.Collections.IDictionary])) {
+            throw 'JSON のトップレベルがオブジェクトではありません'
+        }
+        $before = $parsed
+    }
+    $after = ToOrderedNode $before
+    MergeIntoNode $after $Settings
+
+    # 比較は -Compress で整形を落としてから行う (書式の違いを変更と誤検知しない)。
+    # -Depth は settings.json の入れ子には十分すぎる深さ。既定の 2 だと下位が
+    # 文字列へ潰れて差分が消えるので必ず明示する。
+    $depth = 32
+    $sameJson = (ConvertTo-Json $before -Depth $depth -Compress) -eq
+                (ConvertTo-Json $after  -Depth $depth -Compress)
+    return @{ Changed = (-not $sameJson); Json = (ConvertTo-Json $after -Depth $depth) }
+}
+
+# winget の settings.json へ $Settings のキーだけを冪等に反映する。既存の他キー
+# (ユーザーが winget settings で書いたもの) は保ち、変更が無ければ書かない。
+# JSON として読めないときは警告して何もしない — 読めないものを上書きして失うほうが
+# 大きいので、直すのは人の仕事にする。
+function Update-WingetSettings {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings,
+        [string]$Path = ''
+    )
+    if (-not $Path) { $Path = Get-WingetSettingsPath }
+    if (-not $Path) {
+        Write-Warn 'winget settings: 設定ファイルの場所を特定できません ($env:LOCALAPPDATA が空)'
+        return
+    }
+    $json = ''
+    # ReadAllText は BOM を判別して外す。Get-Content -Raw を使わないのは、PS5.1 の
+    # 既定エンコーディングが UTF-8 でなく非 ASCII が化けるため。
+    if (Test-Path -LiteralPath $Path) { $json = [IO.File]::ReadAllText($Path) }
+    try {
+        $r = Merge-WingetSettingsJson -Json $json -Settings $Settings
+    } catch {
+        Write-Warn ('winget settings: {0} を JSON として解釈できないため更新しません ({1})' -f $Path, $_.Exception.Message)
+        return
+    }
+    if (-not $r.Changed) {
+        Write-Ok 'winget settings: up to date'
+        return
+    }
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    # BOM 無し UTF-8 で書く (設定パーサへ BOM を渡さない)。
+    [IO.File]::WriteAllText($Path, $r.Json, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Ok ('winget settings: updated ({0})' -f $Path)
 }

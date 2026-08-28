@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-28
+
+### Added
+- `lib/winget.ps1`: winget の `settings.json` をキー単位で冪等に更新する
+  `Update-WingetSettings`（純粋なマージ部は `Merge-WingetSettingsJson`、置き場の解決は
+  `Get-WingetSettingsPath`）。ユーザーが書いた他キーを保ったまま指定キーだけを反映し、
+  変更が無ければ書かない。MSIX 版（App Installer）と非パッケージ版のどちらの置き場にも
+  対応する。用途の一例は `installBehavior.downloader` の固定で、既定の Delivery
+  Optimization が 0 バイトのまま滞留すると winget が自前ダウンローダへ落ちるまで待たされる
+  （実測で 63 MB の取得に 13 分、うち実ダウンロードは 3 秒）。コメント付き（JSONC）や
+  壊れた JSON は書き換えずに投げる（PS7 の `ConvertFrom-Json` は JSONC を読めてしまい、
+  そのまま書き戻すとコメントが落ちるため、実装側で明示的に弾いて版による差を消している）。
+
 ## [0.16.0] - 2026-08-25
 
 ### Added
@@ -392,7 +405,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/kan/booch-win/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kan/booch-win/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kan/booch-win/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kan/booch-win/compare/v0.13.0...v0.14.0

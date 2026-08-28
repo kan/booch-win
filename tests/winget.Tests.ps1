@@ -185,3 +185,134 @@ Describe 'Install-WingetPackages' {
         Should -Invoke Write-Warn -Times 1 -ParameterFilter { $Msg -like '*Slow.One*' }
     }
 }
+
+Describe 'Merge-WingetSettingsJson' {
+    It '空のテキストからでも指定キーだけの settings を組み立てる' {
+        $r = Merge-WingetSettingsJson -Json '' -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $r.Changed | Should -BeTrue
+        ($r.Json | ConvertFrom-Json).installBehavior.downloader | Should -Be 'wininet'
+    }
+
+    It '既存の他キーを壊さない (ユーザーが winget settings で書いた設定を保つ)' {
+        $json = '{"$schema":"https://aka.ms/winget-settings.schema.json","visual":{"progressBar":"rainbow"},"installBehavior":{"preferences":{"scope":"user"}}}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $o = $r.Json | ConvertFrom-Json
+        $o.visual.progressBar | Should -Be 'rainbow'
+        $o.installBehavior.preferences.scope | Should -Be 'user'   # 兄弟キーは残る
+        $o.installBehavior.downloader | Should -Be 'wininet'
+        $o.'$schema' | Should -Be 'https://aka.ms/winget-settings.schema.json'
+    }
+
+    It '同じ値がすでに入っていれば Changed=false (無用な書き戻しをしない)' {
+        $json = '{"installBehavior":{"downloader":"wininet"}}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $r.Changed | Should -BeFalse
+    }
+
+    It '整形 (インデント・改行) の違いだけでは Changed にしない' {
+        $json = "{`n    `"installBehavior`": {`n        `"downloader`":  `"wininet`"`n    }`n}`n"
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $r.Changed | Should -BeFalse
+    }
+
+    It '値が違えば上書きする' {
+        $json = '{"installBehavior":{"downloader":"do"}}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $r.Changed | Should -BeTrue
+        ($r.Json | ConvertFrom-Json).installBehavior.downloader | Should -Be 'wininet'
+    }
+
+    It '既存がスカラーで新しい値がオブジェクトなら置き換える (型の食い違いを残さない)' {
+        $json = '{"installBehavior":"broken"}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        ($r.Json | ConvertFrom-Json).installBehavior.downloader | Should -Be 'wininet'
+    }
+
+    It '配列は要素をマージせず丸ごと置き換える' {
+        $json = '{"network":{"downloader":"do"},"experimentalFeatures":["a","b"]}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{ experimentalFeatures = @('c') })
+        $o = $r.Json | ConvertFrom-Json
+        @($o.experimentalFeatures) | Should -Be @('c')
+    }
+
+    It 'BOM 付きのテキストでも読める' {
+        $json = [char]0xFEFF + '{"installBehavior":{"downloader":"do"}}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        $r.Changed | Should -BeTrue
+    }
+
+    It '壊れた JSON は投げる (呼び出し側に触らせない)' {
+        { Merge-WingetSettingsJson -Json '{ "installBehavior": ' -Settings ([ordered]@{ a = 1 }) } |
+            Should -Throw
+    }
+
+    It 'コメント付き (JSONC) も投げる — 読める版でも書き戻してコメントを消さない' {
+        # winget は settings.json のコメントを許す。PS7 の ConvertFrom-Json はこれを読めて
+        # しまうので、そのまま通すと再直列化でコメントが落ちる (PS5.1 では例外)。版で挙動が
+        # 分かれないよう、実装側で明示的に弾いている。
+        $json = @"
+{
+    // 既定の downloader を上書きしている
+    "installBehavior": { "downloader": "do" }
+}
+"@
+        { Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{ a = 1 }) } | Should -Throw
+    }
+
+    It '値の中の URL (//) はコメントと誤検出しない' {
+        $json = '{"$schema":"https://aka.ms/winget-settings.schema.json"}'
+        $r = Merge-WingetSettingsJson -Json $json -Settings ([ordered]@{ a = 'b' })
+        ($r.Json | ConvertFrom-Json).'$schema' | Should -Be 'https://aka.ms/winget-settings.schema.json'
+    }
+
+    It 'トップレベルがオブジェクトでなければ投げる' {
+        { Merge-WingetSettingsJson -Json '[1,2]' -Settings ([ordered]@{ a = 1 }) } | Should -Throw
+    }
+}
+
+Describe 'Update-WingetSettings' {
+    BeforeEach {
+        $script:tmpDir = Join-Path ([IO.Path]::GetTempPath()) ('booch-win-winget-' + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path $script:tmpDir | Out-Null
+        $script:tmp = Join-Path $script:tmpDir 'settings.json'
+    }
+    AfterEach {
+        Remove-Item $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It '無ければ親ディレクトリごと作って書く' {
+        $nested = Join-Path $script:tmpDir 'LocalState\settings.json'
+        Update-WingetSettings -Path $nested -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        (Get-Content $nested -Raw | ConvertFrom-Json).installBehavior.downloader | Should -Be 'wininet'
+    }
+
+    It 'BOM 無し UTF-8 で書く' {
+        Update-WingetSettings -Path $script:tmp -Settings ([ordered]@{ a = 'b' })
+        $bytes = [IO.File]::ReadAllBytes($script:tmp)
+        ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should -BeFalse
+    }
+
+    It '変更が無ければファイルに触らない' {
+        [IO.File]::WriteAllText($script:tmp, '{"installBehavior":{"downloader":"wininet"}}')
+        $before = (Get-Item $script:tmp).LastWriteTimeUtc
+        Start-Sleep -Milliseconds 20
+        Update-WingetSettings -Path $script:tmp -Settings ([ordered]@{
+            installBehavior = [ordered]@{ downloader = 'wininet' } })
+        (Get-Item $script:tmp).LastWriteTimeUtc | Should -Be $before
+    }
+
+    It '読めない JSON は書き換えず、内容をそのまま残す' {
+        $broken = '{ "installBehavior": '
+        [IO.File]::WriteAllText($script:tmp, $broken)
+        Update-WingetSettings -Path $script:tmp -Settings ([ordered]@{ a = 'b' })
+        [IO.File]::ReadAllText($script:tmp) | Should -Be $broken
+    }
+}

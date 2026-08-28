@@ -65,7 +65,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除、WSL vhdx の compact
 - `git.ps1`: 複数 git repo の一括 ff-only pull（許可ブランチ外・dirty は触らない）
 - `autoremove.ps1`: 宣言から外れた Claude プラグイン / marketplace / codex skill の掃除
-- `winget.ps1`: winget 呼び出し・導入判定・追跡外監査
+- `winget.ps1`: winget 呼び出し・導入判定・追跡外監査・設定 (settings.json) のキー単位更新
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロード・GitHub Releases 取得
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
