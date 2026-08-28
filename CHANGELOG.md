@@ -13,7 +13,7 @@
   `Update-WingetSettings`（純粋なマージ部は `Merge-WingetSettingsJson`、置き場の解決は
   `Get-WingetSettingsPath`）。ユーザーが書いた他キーを保ったまま指定キーだけを反映し、
   変更が無ければ書かない。MSIX 版（App Installer）と非パッケージ版のどちらの置き場にも
-  対応する。用途の一例は `installBehavior.downloader` の固定で、既定の Delivery
+  対応する。用途の一例は `network.downloader` の固定で、既定の Delivery
   Optimization が 0 バイトのまま滞留すると winget が自前ダウンローダへ落ちるまで待たされる
   （実測で 63 MB の取得に 13 分、うち実ダウンロードは 3 秒）。コメント付き（JSONC）や
   壊れた JSON は書き換えずに投げる（PS7 の `ConvertFrom-Json` は JSONC を読めてしまい、
