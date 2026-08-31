@@ -97,6 +97,31 @@ Describe 'Get-ClaudeVersion' {
     }
 }
 
+Describe 'Show-ClaudePlugins' {
+    BeforeEach {
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-ClaudePluginList { $script:List }
+        $script:Rows = @()
+        Mock Write-Status { $script:Rows += $Label }
+    }
+
+    It '既定は claude 行の 1 段下 (2 スペース) に並べる' {
+        Show-ClaudePlugins
+        $script:Rows | Should -Be @('  pike-todo', '  codex')
+    }
+
+    It 'Indent を渡すとその深さで並べる (config dir 行を挟む消費側向け)' {
+        Show-ClaudePlugins -Indent '    '
+        $script:Rows | Should -Be @('    pike-todo', '    codex')
+    }
+
+    It '取得失敗の SKIP 行にも Indent が効く' {
+        Mock Get-ClaudePluginList { '' }
+        Show-ClaudePlugins -Indent '    '
+        $script:Rows | Should -Be @('    (plugins)')
+    }
+}
+
 Describe 'Get-ClaudeCommand / Test-ClaudeInstalled' {
     It '実体を引けなければ未導入と判定する' {
         # 対話プロファイルが claude をラップしている環境では、ベア名解決だと CLI 呼び出しが

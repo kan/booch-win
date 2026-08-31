@@ -148,13 +148,17 @@ function Get-ClaudePluginList {
 # claude plugin list を 1 回だけパースし、enabled は緑、それ以外は状態を添えて黄で出す。
 # claude 未導入のときは何も出さない (claude ツール行が既に MISSING を示すため)。取得失敗
 # のときだけ SKIP 行をネスト表示する。$missing には影響しない (情報表示のため)。
+# Indent はラベルの前置き。既定は claude 行の 1 段下 (2 スペース)。config dir ごとの行を
+# 間に挟む消費側は、さらに 1 段下げるために '    ' を渡す (でないとプラグインが dir 行と
+# 同じ深さに並び、どの dir のものか読めなくなる)。
 function Show-ClaudePlugins {
+    param([string]$Indent = '  ')
     if (-not (Test-ClaudeInstalled)) {
         return
     }
     $out = Get-ClaudePluginList
     if (-not $out) {
-        Write-Status '  (plugins)' 'SKIP' Yellow 'プラグイン情報を取得できません'
+        Write-Status "$Indent(plugins)" 'SKIP' Yellow 'プラグイン情報を取得できません'
         return
     }
     # 出力は「  ❯ name@marketplace / Version: x / Scope: y / Status: ✔ enabled」の
@@ -169,9 +173,9 @@ function Show-ClaudePlugins {
             # 「✔ enabled」等。チェックマークの有無に依らず末尾語を状態として使う。
             $st = ($Matches[1] -split '\s+')[-1]
             if ($st -eq 'enabled') {
-                Write-Status "  $name" 'OK' Green $ver
+                Write-Status "$Indent$name" 'OK' Green $ver
             } else {
-                Write-Status "  $name" 'WARN' Yellow "$ver ($st)"
+                Write-Status "$Indent$name" 'WARN' Yellow "$ver ($st)"
             }
         }
     }

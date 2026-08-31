@@ -27,9 +27,10 @@ function Write-Status {
         [ConsoleColor]$Color = 'White',
         [string]$Detail = '',
         # 既定幅。tools の最長ラベル `typescript-language-server` (26) と
-        # claude plugins の最長ラベル (2 字インデント + プラグイン名) が収まり、
-        # 余白 2 字が残る幅にする。config files 側は Get-SyncPairLabelWidth
-        # (lib/sync.ps1) で自動算出した幅を渡す。
+        # claude plugins の最長ラベル (Show-ClaudePlugins の Indent + プラグイン名。
+        # config dir 行を挟む消費側の 4 字インデント + 17 字でも 21) が収まり、余白 2 字が
+        # 残る幅にする。config files 側は Get-SyncPairLabelWidth (lib/sync.ps1) で自動算出
+        # した幅を渡す。
         [int]$LabelWidth = 28
     )
     Write-Host ('  {0}[' -f $Label.PadRight($LabelWidth)) -NoNewline
