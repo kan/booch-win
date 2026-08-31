@@ -6,6 +6,39 @@
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-31
+
+### Added
+- `lib/claude.ps1`: Claude Code の config dir（= アカウント）を扱う 3 関数。
+  `Get-ClaudeConfigPath`（`CLAUDE_CONFIG_DIR` の値 → 実際の dir。空文字は既定 dir）/
+  `Set-ClaudeConfigDir`（被せる・空文字で未設定へ戻す）/ `Invoke-WithClaudeConfigDir`
+  （scriptblock の実行中だけ被せ、終了後に呼び出し元の値へ戻す）。**既定の dir を
+  `CLAUDE_CONFIG_DIR` に明示設定してはいけない**（だから既定は空文字で表す）——
+  グローバル設定 `.claude.json` の置き場が「環境変数があればその配下、無ければ
+  `$HOME\.claude.json`」なので、明示すると別ファイルへ切り替わり user スコープ MCP・
+  プロジェクト履歴・信頼状態が失われたように見える。
+- `lib/autoremove.ps1`: `Get-BoochWinAutoremovePlan` / `Invoke-BoochWinAutoremove` に
+  `-ClaudeConfigDirs`、`Invoke-BoochWinAutoremoveOne` に `-ConfigDir` を追加。plugin /
+  marketplace / mktclone は config dir ごとに別管理なので、渡された dir を 1 つずつ走査する
+  （既定は空文字 1 件 = 既定 dir だけで、従来と同じ挙動）。plan 要素に `ConfigDir` が増え、
+  複数 dir を走査したときは一覧にどの dir の名残かを併記する。config dir に依らない
+  codexskill は 1 回だけ判定し `ConfigDir` は `$null`。mktclone の安全弁 Root も config dir
+  から導出するので、plan と apply が同じ根拠になる。
+
+### Fixed
+- `lib/claude.ps1` / `lib/autoremove.ps1`: claude CLI をベア名 `& claude ...` で呼ぶのをやめ、
+  `Get-ClaudeCommand`（`Get-Command -CommandType Application`）が返す実体経由に統一した。
+  呼び出し側のスコープに `claude` という**関数やエイリアス**があると PowerShell のコマンド
+  解決はそちらを優先するため、本ライブラリの CLI 呼び出しが丸ごと乗っ取られていた（対話
+  プロファイルで claude をラップし、そのセッションから setup を走らせると再現する。PATH の
+  ベア名解決は `.ps1` を PATHEXT の `.cmd` より先に選ぶので、シム側の `-NoProfile` では
+  防げない）。Linux 版 booch が固定バイナリ `$BOOCH_CLAUDE_BIN` を直叩きしているのと同じ
+  方針に揃えた。
+- 同じ理由で、claude の導入有無の判定を `Test-Cmd 'claude'` から `Test-ClaudeInstalled`
+  （実体だけを見る）へ変更した。`Test-Cmd` は種別を絞らない `Get-Command` なので、同名の
+  関数があると**未導入のマシンでも「導入済み」と誤判定**し、`Install-ClaudeCode` が更新側へ
+  分岐して npm での導入フォールバックが動かなかった。
+
 ## [0.17.0] - 2026-08-28
 
 ### Added
@@ -405,7 +438,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/kan/booch-win/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kan/booch-win/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kan/booch-win/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kan/booch-win/compare/v0.14.0...v0.15.0

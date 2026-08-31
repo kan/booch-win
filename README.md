@@ -65,11 +65,14 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除、WSL vhdx の compact
 - `git.ps1`: 複数 git repo の一括 ff-only pull（許可ブランチ外・dirty は触らない）
 - `autoremove.ps1`: 宣言から外れた Claude プラグイン / marketplace / codex skill の掃除
+  （`-ClaudeConfigDirs` に複数の config dir を渡せば、アカウントごとに走査する）
 - `winget.ps1`: winget 呼び出し・導入判定・追跡外監査・設定 (settings.json) のキー単位更新
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロード・GitHub Releases 取得
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
-- `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助
+- `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助。claude CLI は必ず
+  `Get-ClaudeCommand`（実体解決）経由で呼ぶ（同名の関数・エイリアスに乗っ取られないため）。
+  config dir（= アカウント）の切り替えは `Set-ClaudeConfigDir` / `Invoke-WithClaudeConfigDir`
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
 - `keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定・TIP 登録の判定
 - `wsl.ps1`: WSL2 とディストロの導入

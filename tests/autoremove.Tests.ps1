@@ -11,8 +11,8 @@ BeforeAll {
 }
 
 Describe 'Get-BoochWinAutoremovePlan' {
-    # 注: Test-Cmd の mock は各 It で明示する。BeforeEach の既定を It で上書きすると
-    # parameter filter 付き mock の優先順位が紛らわしくなるため (実 claude を誤って叩く)。
+    # 注: claude の有無 (Test-ClaudeInstalled) の mock は各 It で明示する。BeforeEach の既定を
+    # It で上書きすると mock の優先順位が紛らわしくなるため (実 claude を誤って叩く)。
     BeforeEach {
         Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
         $script:MkRoot = Join-Path $TestDrive ('mk_' + [guid]::NewGuid().ToString('N'))
@@ -22,7 +22,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It 'KeepPlugins に無い導入済みプラグインだけを plugin 候補にする' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @('codex', 'pike-todo', 'orphan-plugin') }
         Mock Get-BoochWinRegisteredMarketplace { @() }
         $plan = @(Get-BoochWinAutoremovePlan -KeepPlugins @('codex', 'pike-todo') `
@@ -33,7 +33,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It 'KeepMarketplaces に無い登録済み marketplace だけを marketplace 候補にする' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @() }
         Mock Get-BoochWinRegisteredMarketplace { @('claude-plugins-official', 'pike', 'stray-mkt') }
         $plan = @(Get-BoochWinAutoremovePlan -KeepMarketplaces @('claude-plugins-official', 'pike') `
@@ -44,7 +44,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It '未登録かつ Keep 外の marketplaces clone だけを mktclone 候補にする' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @() }
         Mock Get-BoochWinRegisteredMarketplace { @('pike') }
         New-Item -ItemType Directory -Path (Join-Path $script:MkRoot 'pike')  -Force | Out-Null  # 登録済み → 除外
@@ -58,7 +58,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It 'KeepCodexSkills に無い codex skill だけを codexskill 候補にする' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @() }
         Mock Get-BoochWinRegisteredMarketplace { @() }
         New-Item -ItemType Directory -Path (Join-Path $script:CxRoot 'pike-todo') -Force | Out-Null   # Keep → 除外
@@ -71,7 +71,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It 'ドット始まりの内部ディレクトリ (.system / .git) は候補にしない' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @() }
         Mock Get-BoochWinRegisteredMarketplace { @() }
         New-Item -ItemType Directory -Path (Join-Path $script:MkRoot '.git')    -Force | Out-Null
@@ -81,7 +81,7 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It 'claude 不在なら plugin/marketplace/mktclone は出さず codexskill だけ判定する' {
-        Mock Test-Cmd { $false } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $false }
         New-Item -ItemType Directory -Path (Join-Path $script:MkRoot 'ghost')   -Force | Out-Null
         New-Item -ItemType Directory -Path (Join-Path $script:CxRoot 'leftover') -Force | Out-Null
         $plan = @(Get-BoochWinAutoremovePlan -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot)
@@ -90,25 +90,100 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It '宣言と一致していれば空の plan を返す' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @('codex') }
         Mock Get-BoochWinRegisteredMarketplace { @('pike') }
         $plan = @(Get-BoochWinAutoremovePlan -KeepPlugins @('codex') -KeepMarketplaces @('pike') `
                 -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot)
         $plan.Count | Should -Be 0
     }
+
+    It 'ClaudeConfigDirs を複数渡すと dir ごとに走査し ConfigDir を付ける' {
+        # 片方の dir しか見ないと、もう片方のリスト外プラグインが永久に残る。
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-BoochWinInstalledPlugin {
+            if ($env:CLAUDE_CONFIG_DIR) { @('orphan-alt') } else { @('orphan-default') }
+        }
+        Mock Get-BoochWinRegisteredMarketplace { @() }
+        $alt  = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $plan = @(Get-BoochWinAutoremovePlan -ClaudeConfigDirs @('', $alt) `
+                -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot)
+        $plugins = @($plan | Where-Object Kind -eq 'plugin')
+        $plugins.Count | Should -Be 2
+        ($plugins | Where-Object Id -eq 'orphan-default').ConfigDir | Should -BeNullOrEmpty
+        ($plugins | Where-Object Id -eq 'orphan-alt').ConfigDir     | Should -Be $alt
+    }
+
+    It '走査後は呼び出し元の CLAUDE_CONFIG_DIR へ戻す' {
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-BoochWinInstalledPlugin { @() }
+        Mock Get-BoochWinRegisteredMarketplace { @() }
+        $alt = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        Get-BoochWinAutoremovePlan -ClaudeConfigDirs @('', $alt) `
+            -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot | Out-Null
+        (Test-Path Env:CLAUDE_CONFIG_DIR) | Should -BeFalse
+    }
+
+    It 'MarketplacesRoot 未指定なら mktclone の走査先を config dir 配下から導出する' {
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-BoochWinInstalledPlugin { @() }
+        Mock Get-BoochWinRegisteredMarketplace { @() }
+        $alt = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $alt 'plugins\marketplaces\ghost') -Force | Out-Null
+        $plan = @(Get-BoochWinAutoremovePlan -ClaudeConfigDirs @($alt) -CodexSkillsRoot $script:CxRoot)
+        $mk = @($plan | Where-Object Kind -eq 'mktclone')
+        $mk.Count       | Should -Be 1
+        $mk[0].Id       | Should -Be 'ghost'
+        $mk[0].ConfigDir | Should -Be $alt
+    }
+
+    It 'codexskill は config dir に依らないので ConfigDir を持たない' {
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-BoochWinInstalledPlugin { @() }
+        Mock Get-BoochWinRegisteredMarketplace { @() }
+        New-Item -ItemType Directory -Path (Join-Path $script:CxRoot 'leftover') -Force | Out-Null
+        $alt  = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $plan = @(Get-BoochWinAutoremovePlan -ClaudeConfigDirs @('', $alt) `
+                -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot)
+        $cx = @($plan | Where-Object Kind -eq 'codexskill')
+        $cx.Count | Should -Be 1                     # dir の数だけ重複しない
+        $cx[0].ConfigDir | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Invoke-BoochWinAutoremoveOne' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}
+    }
+
+    It 'mktclone の安全弁 Root を ConfigDir 配下から導出する' {
+        $alt    = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $target = Join-Path $alt 'plugins\marketplaces\ghost'
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Invoke-BoochWinAutoremoveOne -Kind 'mktclone' -Target $target -ConfigDir $alt | Should -BeTrue
+        Test-Path -LiteralPath $target | Should -BeFalse
+    }
+
+    It '別の config dir を指定すると安全弁に弾かれて消さない' {
+        $alt    = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $other  = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $target = Join-Path $alt 'plugins\marketplaces\ghost'
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Invoke-BoochWinAutoremoveOne -Kind 'mktclone' -Target $target -ConfigDir $other | Should -BeFalse
+        Test-Path -LiteralPath $target | Should -BeTrue
+    }
 }
 
 Describe 'Get-BoochWinInstalledPlugin' {
     It '❯ 行の name@marketplace から name を拾う' {
-        Mock Test-Cmd { $true } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $true }
         Mock Get-ClaudePluginList { "❯ codex@openai-codex`n  Version: 1.0`n❯ pike-todo@pike`n  Version: 2.0" }
         $names = @(Get-BoochWinInstalledPlugin)
         $names | Should -Be @('codex', 'pike-todo')
     }
 
     It 'claude 不在なら空を返す' {
-        Mock Test-Cmd { $false } -ParameterFilter { $Name -eq 'claude' }
+        Mock Test-ClaudeInstalled { $false }
         @(Get-BoochWinInstalledPlugin).Count | Should -Be 0
     }
 }

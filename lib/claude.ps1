@@ -5,12 +5,76 @@
 # dotfiles-win.ps1 から dot-source される。どのプラグインを有効化するか
 # ($ClaudePlugins) は個人選択なので dotfiles-win.config.ps1。
 
+# PATH 上の claude 実体 (アプリケーション) を返す (未導入なら $null)。
+#
+# **CLI 呼び出しは必ずこれ経由にする。ベア名の `& claude ...` を書かないこと。** 呼び出し側の
+# スコープに claude という関数やエイリアスがあると、PowerShell のコマンド解決はそちらを優先
+# するので、本ライブラリの CLI 呼び出しが丸ごとそこへ乗っ取られる (対話プロファイルで claude を
+# ラップしている環境で実際に起きる)。Linux 版 booch が固定バイナリ ($BOOCH_CLAUDE_BIN) を
+# 直叩きしているのと同じ理由。-CommandType Application は関数・エイリアス・.ps1 シムを除く。
+#
+# 解決結果はキャッシュしない — Install-ClaudeCode の前後で有無が変わるため。
+function Get-ClaudeCommand {
+    return (Get-Command 'claude' -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1)
+}
+
+# claude 本体が導入済みか。Test-Cmd 'claude' の代わりに使う — Test-Cmd は種別を絞らない
+# Get-Command なので、同名の関数・エイリアスがあると未導入でも $true になり、導入処理が
+# 「導入済み」へ分岐して黙って何もしない。
+function Test-ClaudeInstalled {
+    return [bool](Get-ClaudeCommand)
+}
+
+# CLAUDE_CONFIG_DIR の値 (空 = 未設定) に対応する実際の config dir を返す。
+# Claude Code は認証・settings.json・プラグイン・履歴・user スコープ MCP をこの dir 単位で
+# 分けるので、複数アカウントを使い分ける利用側はここを切り替えて回す。
+function Get-ClaudeConfigPath {
+    param([string]$ConfigDir = '')
+    if ($ConfigDir) { return $ConfigDir }
+    return (Join-Path $HOME '.claude')
+}
+
+# CLAUDE_CONFIG_DIR を被せる。空文字は「未設定に戻す」= 既定の dir。
+#
+# **既定の dir を明示的に設定してはいけない** (だから既定は空文字で表す)。Claude Code の
+# グローバル設定 .claude.json の置き場は「CLAUDE_CONFIG_DIR があればその配下、無ければ
+# $HOME\.claude.json」という決まりなので、$HOME\.claude を明示すると
+# $HOME\.claude\.claude.json という別ファイルへ切り替わり、user スコープ MCP・プロジェクト
+# 履歴・信頼状態が失われたように見える。空文字を代入するのも不可 (空のパスとして扱われる)。
+function Set-ClaudeConfigDir {
+    param([string]$ConfigDir = '')
+    if ($ConfigDir) {
+        $env:CLAUDE_CONFIG_DIR = $ConfigDir
+    } else {
+        Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue
+    }
+}
+
+# 渡された scriptblock を指定 config dir の下で実行し、終了後に呼び出し元の
+# CLAUDE_CONFIG_DIR へ戻す (Invoke-WithGitHubHttps と同じ作法)。複数アカウントを順に
+# 回す処理が、呼び出し元の環境を書き換えたまま返らないようにするためのもの。
+function Invoke-WithClaudeConfigDir {
+    param(
+        [string]$ConfigDir = '',
+        [Parameter(Mandatory)][scriptblock]$Script
+    )
+    $saved = $env:CLAUDE_CONFIG_DIR
+    try {
+        Set-ClaudeConfigDir $ConfigDir
+        & $Script
+    } finally {
+        Set-ClaudeConfigDir $saved
+    }
+}
+
 # Claude Code 本体の版を返す (未導入 / 取得失敗は空文字)。
 # `claude --version` は "2.1.220 (Claude Code)" のように版の後ろに製品名が付くので、
 # 先頭行から版だけを取り出す (プラグインの版表示と粒度を揃えるため)。
 function Get-ClaudeVersion {
-    if (-not (Test-Cmd 'claude')) { return '' }
-    $out = Invoke-Quiet { & claude --version 2>&1 | Out-String }
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return '' }
+    $out = Invoke-Quiet { & $cmd --version 2>&1 | Out-String }
     if (-not $out) { return '' }
     $line = ($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
     if (-not $line) { return '' }
@@ -30,10 +94,11 @@ function Get-ClaudeProcess {
 # 「already installed」としか出ず、本体だけプラグイン (Enable-ClaudePlugin) と
 # 非対称に「何が上がったか」が読めなくなる。
 function Install-ClaudeCode {
-    if (Test-Cmd 'claude') {
+    $cmd = Get-ClaudeCommand
+    if ($cmd) {
         $old = Get-ClaudeVersion
         Write-Info 'Updating Claude Code...'
-        Invoke-Quiet { & claude update 2>&1 | Out-Null }
+        Invoke-Quiet { & $cmd update 2>&1 | Out-Null }
         if ($LASTEXITCODE -ne 0 -and (Test-Cmd 'npm')) {
             # npm はグローバル更新の前に既存パッケージを一時ディレクトリへ退避コピーするので、
             # claude.exe が起動したままだと copyfile が EBUSY で落ちる (Claude Code の
@@ -73,7 +138,9 @@ function Install-ClaudeCode {
 # claude plugin list の出力を 1 つの文字列で返す。判定の使い回し用 (複数
 # プラグインを同一スナップショットで判定でき、list 呼び出しを 1 回に抑える)。
 function Get-ClaudePluginList {
-    return (Invoke-Quiet { & claude plugin list 2>&1 | Out-String })
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return '' }
+    return (Invoke-Quiet { & $cmd plugin list 2>&1 | Out-String })
 }
 
 # doctor 向け: 導入済み claude プラグインを claude 行の直下にネストして版付きで列挙する
@@ -82,7 +149,7 @@ function Get-ClaudePluginList {
 # claude 未導入のときは何も出さない (claude ツール行が既に MISSING を示すため)。取得失敗
 # のときだけ SKIP 行をネスト表示する。$missing には影響しない (情報表示のため)。
 function Show-ClaudePlugins {
-    if (-not (Test-Cmd 'claude')) {
+    if (-not (Test-ClaudeInstalled)) {
         return
     }
     $out = Get-ClaudePluginList
@@ -164,8 +231,9 @@ function Add-ClaudeMarketplace {
         [Parameter(Mandatory)][string]$Repo,   # owner/name
         [Parameter(Mandatory)][string]$Name    # marketplace list 上の表示名
     )
-    if (-not (Test-Cmd 'claude')) { return }
-    $list = Invoke-Quiet { & claude plugin marketplace list 2>&1 | Out-String }
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return }
+    $list = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
     # 行頭の非単語文字 (空白 + 選択マーカー `❯`) を読み飛ばす。Enable-ClaudePlugin と同様。
     if ($list -match "(?m)^[^\w]*$([regex]::Escape($Name))\b") {
         Write-Ok "$Name marketplace: already added"
@@ -173,7 +241,7 @@ function Add-ClaudeMarketplace {
     }
     Write-Info "Adding $Name marketplace..."
     Invoke-WithGitHubHttps {
-        Invoke-Quiet { & claude plugin marketplace add $Repo 2>&1 | Out-Null }
+        Invoke-Quiet { & $cmd plugin marketplace add $Repo 2>&1 | Out-Null }
     }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "$Name marketplace: added"
@@ -191,10 +259,11 @@ function Add-ClaudeMarketplace {
 # 失敗は致命でない (ネットワーク断でも既存の clone のまま続行できる) ので警告に留める。
 # clone の fetch を伴うため Invoke-WithGitHubHttps の下で実行する。
 function Update-ClaudeMarketplace {
-    if (-not (Test-Cmd 'claude')) { return }
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return }
     Write-Info 'Updating Claude marketplaces...'
     Invoke-WithGitHubHttps {
-        Invoke-Quiet { & claude plugin marketplace update 2>&1 | Out-Null }
+        Invoke-Quiet { & $cmd plugin marketplace update 2>&1 | Out-Null }
     }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok 'Claude marketplaces: updated'
@@ -219,7 +288,8 @@ function Enable-ClaudePlugin {
         [Parameter(Mandatory)][string]$ShortName,
         [string]$PluginList
     )
-    if (-not (Test-Cmd 'claude')) { return }
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return }
     if (-not $PluginList) { $PluginList = Get-ClaudePluginList }
     # ShortName を素の部分一致で見ると、別プラグイン名や説明文に同じ部分文字列が
     # 含まれたとき「有効化済み」と誤認しうる。行頭の非単語文字 (前置空白 + 選択
@@ -231,7 +301,7 @@ function Enable-ClaudePlugin {
         # 後の版をそこから読むと必ず「変わっていない」になる)。
         $old = Get-ClaudePluginVersion -Plugin $Plugin -PluginList $PluginList
         Invoke-WithGitHubHttps {
-            Invoke-Quiet { & claude plugin update $Plugin 2>&1 | Out-Null }
+            Invoke-Quiet { & $cmd plugin update $Plugin 2>&1 | Out-Null }
         }
         $new = Get-ClaudePluginVersion -Plugin $Plugin
         if ($old -and $new -and $old -ne $new) {
@@ -246,7 +316,7 @@ function Enable-ClaudePlugin {
         # 外部 marketplace のプラグインは clone を伴うため、github SSH→HTTPS 書き換えの
         # 下で install する (組込みプラグインでも無害)。
         Invoke-WithGitHubHttps {
-            Invoke-Quiet { & claude plugin install $Plugin 2>&1 | Out-Null }
+            Invoke-Quiet { & $cmd plugin install $Plugin 2>&1 | Out-Null }
         }
         if ($LASTEXITCODE -eq 0) {
             Write-Ok "$ShortName plugin: installed"
