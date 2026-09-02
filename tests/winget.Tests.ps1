@@ -184,6 +184,29 @@ Describe 'Install-WingetPackages' {
         # skip は黙って起きない (次回の実行で拾う旨をログに残す)。
         Should -Invoke Write-Warn -Times 1 -ParameterFilter { $Msg -like '*Slow.One*' }
     }
+
+    It 'Optional は未導入なら install しない (入っている環境だけ更新する宣言)' {
+        Mock Get-WingetInstallState { 'NotInstalled' }
+        Install-WingetPackages -Packages @(@{ Id = 'Heavy.Sdk'; Cmd = 'heavy'; Optional = $true })
+        Should -Invoke Invoke-Winget -Times 0
+        # 意図的な skip であることをログに残す (宣言したのに入らない、と読めないように)。
+        Should -Invoke Write-Info -Times 1 -ParameterFilter { $Msg -like '*Heavy.Sdk*' }
+    }
+
+    It 'Optional でも導入済みなら upgrade を呼ぶ' {
+        Mock Get-WingetInstallState { 'Installed' }
+        Install-WingetPackages -Packages @(@{ Id = 'Heavy.Sdk'; Cmd = 'heavy'; Optional = $true })
+        Should -Invoke Invoke-Winget -Times 1 -ParameterFilter { $WingetArgs[0] -eq 'upgrade' }
+    }
+
+    It 'Optional を指定しないパッケージは従来どおり install する' {
+        Mock Get-WingetInstallState { 'NotInstalled' }
+        Install-WingetPackages -Packages @(
+            @{ Id = 'Heavy.Sdk'; Cmd = 'heavy'; Optional = $false },
+            @{ Id = 'Foo.Bar';   Cmd = 'foo' }
+        )
+        Should -Invoke Invoke-Winget -Times 2 -ParameterFilter { $WingetArgs[0] -eq 'install' }
+    }
 }
 
 Describe 'Merge-WingetSettingsJson' {

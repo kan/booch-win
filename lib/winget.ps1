@@ -224,7 +224,11 @@ function Test-WingetUpgradeNoop {
 }
 
 # winget パッケージ群を導入/更新する。同 ID が winget 上に導入済みなら upgrade、
-# 無ければ install。$Packages は @{ Id=...; Cmd=... } の配列 (個人選択。config 側で定義)。
+# 無ければ install。$Packages は @{ Id=...; Cmd=...; Optional=$true } の配列
+# (個人選択。config 側で定義。Optional は省略可)。
+# Optional=$true は「入っている環境だけ最新に保つ」宣言で、未導入なら install しない。
+# 一部のマシンにしか入れない重いもの (SDK・ビルドツール等) を、全マシンへ配らずに
+# 更新対象へ載せるための指定。宣言に載るので追跡外パッケージの監査にも出なくなる。
 # 導入判定にコマンドの存在 (Test-Cmd) は使わない — 別経路で入った同名コマンド
 # (例: 手動導入の Python 3.9 が py を提供) を「導入済み」と誤判定すると、upgrade
 # 対象の ID が実在しないため何も起きず、目的のパッケージが永遠に入らないため。
@@ -257,6 +261,11 @@ function Install-WingetPackages {
             if (-not (Test-WingetUpgradeNoop $ec)) {
                 Write-Warn ('{0}: 更新に失敗しました (exit 0x{1:X8})。上の winget の出力を確認してください' -f $pkg.Id, $ec)
             }
+        } elseif ($pkg.Optional) {
+            # 任意導入 (Optional=$true) は未導入が正常な状態なので、install へは倒さない。
+            # 黙って飛ばすと「宣言に載っているのに入らない」と読めてしまうため、意図的な
+            # skip であることをログに残す。
+            Write-Info ('{0} ({1}): 未導入 (Optional 指定のため導入しません)' -f $pkg.Id, $pkg.Cmd)
         } else {
             Write-Info ('Installing {0}...' -f $pkg.Id)
             $ec = Invoke-Winget @('install', '--id', $pkg.Id, '-e', '--silent', '--disable-interactivity',

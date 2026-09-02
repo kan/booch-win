@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-02
+
+### Added
+- `Install-WingetPackages`（`lib/winget.ps1`）のパッケージ要素に `Optional`。`$true` なら
+  未導入のときは install せず、導入済みのときだけ upgrade する。全マシンへ配りたくない
+  重いもの（ビルドツール・SDK 等）を「入っている環境だけ最新に保つ」ために使う。宣言に
+  載るので `Show-WingetUntracked` の追跡外一覧にも出なくなる。省略時は従来どおり未導入
+  なら install する。
+
+### Fixed
+- `tests/autoremove.Tests.ps1` の「走査後は呼び出し元の `CLAUDE_CONFIG_DIR` へ戻す」が、
+  呼び出し元では未設定という前提で書かれていた。`CLAUDE_CONFIG_DIR` を設定して起動する端末
+  （アカウントを切り替えるラッパー等）では、正しく元へ戻しているのに失敗していた。呼び出し元
+  が未設定・設定済みの両方について「元の値へ戻る」ことを見るようにした（機構側の変更は無し）。
+
 ## [0.19.0] - 2026-08-31
 
 ### Added

@@ -115,13 +115,28 @@ Describe 'Get-BoochWinAutoremovePlan' {
     }
 
     It '走査後は呼び出し元の CLAUDE_CONFIG_DIR へ戻す' {
+        # 見るのは「未設定へ戻る」ではなく「呼び出し元の値へ戻る」。テストを走らせる端末が
+        # CLAUDE_CONFIG_DIR を設定していることはある (アカウントを切り替えるラッパー等) ので、
+        # 未設定を前提にすると機構は正しいのにその端末でだけ落ちる。両方の呼び出し元状態を見る。
         Mock Test-ClaudeInstalled { $true }
         Mock Get-BoochWinInstalledPlugin { @() }
         Mock Get-BoochWinRegisteredMarketplace { @() }
-        $alt = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
-        Get-BoochWinAutoremovePlan -ClaudeConfigDirs @('', $alt) `
-            -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot | Out-Null
-        (Test-Path Env:CLAUDE_CONFIG_DIR) | Should -BeFalse
+        $alt   = Join-Path $TestDrive ('cfg_' + [guid]::NewGuid().ToString('N'))
+        $saved = $env:CLAUDE_CONFIG_DIR
+        try {
+            foreach ($caller in @('', (Join-Path $TestDrive 'caller'))) {
+                Set-ClaudeConfigDir $caller
+                Get-BoochWinAutoremovePlan -ClaudeConfigDirs @('', $alt) `
+                    -MarketplacesRoot $script:MkRoot -CodexSkillsRoot $script:CxRoot | Out-Null
+                if ($caller) {
+                    $env:CLAUDE_CONFIG_DIR | Should -Be $caller
+                } else {
+                    (Test-Path Env:CLAUDE_CONFIG_DIR) | Should -BeFalse
+                }
+            }
+        } finally {
+            Set-ClaudeConfigDir $saved
+        }
     }
 
     It 'MarketplacesRoot 未指定なら mktclone の走査先を config dir 配下から導出する' {
