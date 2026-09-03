@@ -154,6 +154,31 @@ Describe 'Get-WingetInstalledIds' {
     }
 }
 
+Describe 'Show-WingetUntracked' {
+    BeforeEach {
+        Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Warn {}; Mock Write-Status {}
+        Mock Get-WingetInstalledIds { @('Foo.Bar', 'Baz.Qux') }
+    }
+
+    It '取得済みの ID 集合を渡せば winget を叩かない (doctor と 1 回の取得を共有する)' {
+        Show-WingetUntracked -Tracked @('Foo.Bar') -InstalledIds @('Foo.Bar', 'Extra.One')
+        Should -Invoke Get-WingetInstalledIds -Times 0
+        Should -Invoke Write-Warn -Times 1 -ParameterFilter { $Msg -like '*1 件*' }
+    }
+
+    It '渡さなければ従来どおり自分で取得する' {
+        Show-WingetUntracked -Tracked @('Foo.Bar', 'Baz.Qux')
+        Should -Invoke Get-WingetInstalledIds -Times 1
+        Should -Invoke Write-Ok -Times 1
+    }
+
+    It '空の ID 集合は「取得に失敗した」なので取り直さず SKIP (上限をもう一度払わない)' {
+        Show-WingetUntracked -Tracked @('Foo.Bar') -InstalledIds @()
+        Should -Invoke Get-WingetInstalledIds -Times 0
+        Should -Invoke Write-Status -Times 1 -ParameterFilter { $Status -eq 'SKIP' }
+    }
+}
+
 Describe 'Install-WingetPackages' {
     BeforeEach {
         Mock Write-Host {}; Mock Write-Ok {}; Mock Write-Info {}; Mock Write-Warn {}; Mock Write-Fail {}

@@ -6,6 +6,25 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-03
+
+### Added
+- `Show-ToolList`（`lib/doctor.ps1`）のツール要素に `Optional` と `WingetId`。`Optional = $true`
+  は「入っていなくてもよい」宣言で、未導入なら `MISSING`（赤）ではなく `SKIP`（未導入 (任意)）に
+  し missing 集計にも数えない（`Install-WingetPackages` の同名キーと対になる。一部の機械にしか
+  入れないものを doctor へ載せられるようにするため）。未導入のときは `Latest` を引かない。
+- `Show-ToolList` に `-WingetIds`。`Get-WingetInstalledIds` の結果を渡すと、ツールの `WingetId`
+  との厳密一致でも導入判定する。PATH に実行ファイルを出さないもの（開発者シェルの中にしか
+  出ない MSVC の `link.exe` 等）を「導入済みでも未検出」にしないため。判定は
+  `Test-ToolInstalled`（公開）に切り出した。ID 集合が空（未取得・取得失敗）でその ID でしか
+  見つけられないツールは、`MISSING` ではなく `SKIP`（判定不能）にする — 取得できなかったことを
+  「未導入」へ丸めると、winget が詰まった回だけ doctor が exit 1 になるため
+  （`Get-WingetInstallState` の `'Unknown'` を丸めないのと同じ扱い）。
+- `Show-WingetUntracked`（`lib/winget.ps1`）に `-InstalledIds`。取得済みの ID 集合を渡せば
+  `winget export` を再実行しない（doctor が `Show-ToolList` と 1 回の取得を共有できる）。
+  空配列は「取得を試みて失敗した」であって未指定ではないので、取り直さず従来の SKIP 行にする
+  （取り直すと、winget が詰まっている回にだけ読み取り上限をもう一度払うことになる）。
+
 ## [0.20.0] - 2026-09-02
 
 ### Added
@@ -464,7 +483,9 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/kan/booch-win/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/kan/booch-win/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kan/booch-win/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kan/booch-win/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kan/booch-win/compare/v0.16.0...v0.17.0

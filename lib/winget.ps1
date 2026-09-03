@@ -184,12 +184,17 @@ function Get-WingetInstalledIds {
 # 追跡外 winget パッケージの監査 (Linux booch_doctor_apt_untracked の Windows 版)。
 # $Tracked = 管理下の ID、$Ignore = 監査対象外の ID パターン (-like)。「入れているのに
 # dotfiles 管理外」のものを可視化する。情報表示のみで missing 集計には影響しない。
+# $InstalledIds に取得済みの ID 集合を渡すと winget を叩かない (doctor が任意ツールの
+# 導入判定にも同じ集合を使うため。渡さなければ ($null のまま) 従来どおりここで 1 回取得する)。
+# 空配列は「取得を試みて失敗した」であって未指定ではないので、渡されたら取り直さず SKIP に
+# する — 取り直すと、winget が詰まっている回にだけ読み取り上限をもう一度払うことになる。
 function Show-WingetUntracked {
     param(
         [Parameter(Mandatory)][array]$Tracked,
-        [array]$Ignore = @()
+        [array]$Ignore = @(),
+        [array]$InstalledIds = $null
     )
-    $installed = Get-WingetInstalledIds
+    $installed = if ($null -ne $InstalledIds) { $InstalledIds } else { Get-WingetInstalledIds }
     if (-not $installed) {
         Write-Status 'winget audit' 'SKIP' Yellow 'winget export から一覧を取得できません (応答待ちの上限超過を含む)'
         return

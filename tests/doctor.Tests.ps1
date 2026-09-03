@@ -54,6 +54,75 @@ Describe 'Get-VersionNote' {
     }
 }
 
+Describe 'Test-ToolInstalled' {
+    It 'PATH で見つかれば導入済み' {
+        Mock Test-Cmd { $true }
+        Test-ToolInstalled -Tool @{ Cmd = 'git' } | Should -BeTrue
+    }
+
+    It 'PATH に無くても winget の ID 集合にあれば導入済み (link.exe のように PATH へ出ないもの)' {
+        Mock Test-Cmd { $false }
+        Test-ToolInstalled -Tool @{ Cmd = 'link.exe'; WingetId = 'Vendor.BuildTools' } `
+            -WingetIds @('Vendor.BuildTools', 'Other.Pkg') | Should -BeTrue
+    }
+
+    It 'ID 集合に無ければ未導入 (前方一致ではなく厳密一致で見る)' {
+        Mock Test-Cmd { $false }
+        Test-ToolInstalled -Tool @{ Cmd = 'link.exe'; WingetId = 'Vendor.BuildTools' } `
+            -WingetIds @('Vendor.BuildTools.Preview') | Should -BeFalse
+    }
+
+    It 'ID 集合が空 (未取得・取得失敗) なら PATH の判定に委ねる' {
+        # 取得できなかったことを「未導入」へ丸めると、winget が応答しない回だけ表示が変わる。
+        Mock Test-Cmd { $true }
+        Test-ToolInstalled -Tool @{ Cmd = 'magick'; WingetId = 'Vendor.Magick' } -WingetIds @() |
+            Should -BeTrue
+    }
+}
+
+Describe 'Show-ToolList' {
+    BeforeEach { Mock Write-Host {}; Mock Write-Status {} }
+
+    It '未導入は MISSING で missing 集計に載る' {
+        Mock Test-Cmd { $false }
+        Show-ToolList -Tools @(@{ Label = 'git'; Cmd = 'git'; Ver = { 'x' } }) | Should -BeTrue
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'MISSING' } -Times 1
+    }
+
+    It 'Optional なツールは未導入でも SKIP で、missing 集計に載せない' {
+        Mock Test-Cmd { $false }
+        Show-ToolList -Tools @(@{ Label = 'magick'; Cmd = 'magick'; Ver = { 'x' }; Optional = $true }) |
+            Should -BeFalse
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'SKIP' } -Times 1
+    }
+
+    It '未導入の Optional では Latest を引かない (ネットワークを使うものがあるため)' {
+        Mock Test-Cmd { $false }
+        $script:latestCalls = 0
+        Show-ToolList -Tools @(@{ Label = 'magick'; Cmd = 'magick'; Ver = { 'x' }; Optional = $true
+                Latest = { $script:latestCalls++; '1.0.0' } }) | Out-Null
+        $script:latestCalls | Should -Be 0
+    }
+
+    It 'WingetId 付きのツールは ID 集合を取れなければ判定不能の SKIP (winget が詰まった回に赤くしない)' {
+        # ここで MISSING にすると、導入済みでも winget の応答待ちが上限を超えた回だけ
+        # doctor が exit 1 になる。
+        Mock Test-Cmd { $false }
+        Show-ToolList -Tools @(@{ Label = 'buildtools'; Cmd = 'link.exe'; Ver = { 'x' }
+                WingetId = 'Vendor.BuildTools' }) -WingetIds @() | Should -BeFalse
+        Should -Invoke Write-Status -Times 1 -ParameterFilter {
+            $Status -eq 'SKIP' -and $Detail -like '*判定不能*' }
+    }
+
+    It 'Optional でも導入済みなら従来どおり版を出す' {
+        Mock Test-Cmd { $false }
+        Show-ToolList -Tools @(@{ Label = 'buildtools'; Cmd = 'link.exe'; Ver = { '14.44' }
+                WingetId = 'Vendor.BuildTools'; Optional = $true }) -WingetIds @('Vendor.BuildTools') |
+            Should -BeFalse
+        Should -Invoke Write-Status -ParameterFilter { $Status -eq 'OK' } -Times 1
+    }
+}
+
 Describe 'Show-DiskFree' {
     BeforeEach { Mock Write-Host {}; Mock Write-Status {} }
 

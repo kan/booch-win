@@ -32,7 +32,28 @@ function Get-VersionNote {
     return ''
 }
 
-# ツール一覧 (@{ Label; Cmd; Ver; Latest }) を順に判定し Write-Status で表示する。
+# ツール 1 つが導入済みかを判定する。PATH (Test-Cmd) で見つかるか、winget の導入済み
+# ID 集合 $WingetIds に WingetId が厳密一致すれば導入済み。どちらかで足りるのは、
+# 「PATH に実行ファイルを出さない」もの (MSVC の link.exe は開発者シェルの中にしか出ない)
+# と「winget 以外の経路・別変種の ID で入っている」ものの両方を拾うため。
+# $WingetIds が空 (未取得・取得失敗) なら PATH だけで見る。PATH にも出ないツールは
+# 「未導入」ではなく判定できなかっただけなので、Show-ToolList 側でその場合を分けて出す
+# (ここは真偽値しか返さないため、区別は呼び出し側が持つ)。ID 集合の取得は呼び出し側の
+# 仕事 (Get-WingetInstalledIds を 1 回呼んで doctor 内で使い回す。ツールごとに winget を
+# 叩くと読み取り上限×個数かかる)。
+function Test-ToolInstalled {
+    param(
+        [Parameter(Mandatory)]$Tool,
+        [array]$WingetIds = @()
+    )
+    if ($Tool.Cmd -and (Test-Cmd $Tool.Cmd)) { return $true }
+    # 空・未取得の集合では -contains が素直に $false を返す (＝PATH の判定だけが残る)。
+    if ($Tool.WingetId) { return ($WingetIds -contains [string]$Tool.WingetId) }
+    return $false
+}
+
+# ツール一覧 (@{ Label; Cmd; Ver; Latest; WingetId; Optional }) を順に判定し
+# Write-Status で表示する。
 # Ver は導入済みのときバージョン文字列を出すための scriptblock。1 つでも
 # 未導入なら $true を返す (呼び出し側の missing 集計に使う)。
 # $After は Label→scriptblock のマップ。該当ラベル行の直後にその scriptblock を
@@ -42,14 +63,22 @@ function Get-VersionNote {
 # 遅れていても MISSING にはしない (動きはするので、可視化だけが目的)。どのツールを
 # どこと比較するかは個人選択なので Latest の中身は消費側の config が持つ (Linux で
 # booch_doctor_tool が機構、prefetch の URL が dotfiles 側なのと同じ分担)。
+#
+# WingetId (任意) は導入判定に使う winget のパッケージ ID。$WingetIds に
+# Get-WingetInstalledIds の結果を渡すと、PATH に出ないツールも導入済みと判定できる。
+# $WingetIds が空 (取得できなかった) なら、その行は MISSING ではなく判定不能の SKIP にする。
+# Optional (任意) は「入っていなくてもよい」宣言 (Install-WingetPackages の同名キーと対)。
+# 未導入なら MISSING ではなく SKIP 行にし、missing 集計にも数えない。未導入のときは
+# Latest も引かない (ネットワークを使うものがあるうえ、比較する現在版が無い)。
 function Show-ToolList {
     param(
         [Parameter(Mandatory)][array]$Tools,
-        [hashtable]$After
+        [hashtable]$After,
+        [array]$WingetIds = @()
     )
     $missing = $false
     foreach ($t in $Tools) {
-        if (Test-Cmd $t.Cmd) {
+        if (Test-ToolInstalled -Tool $t -WingetIds $WingetIds) {
             $v = ''
             try {
                 $raw = Invoke-Quiet { & $t.Ver 2>$null }
@@ -64,6 +93,16 @@ function Show-ToolList {
                 $note = Get-VersionNote -Current $v -Latest $latest
             }
             Write-Status $t.Label 'OK' Green "$v$note"
+        } elseif ($t.WingetId -and @($WingetIds).Count -eq 0) {
+            # ID 集合を取れなかった回 (winget の応答待ちが上限を超過した等)。WingetId を
+            # 添えるのは PATH に出ないツールなので、PATH で見つからなくても未導入とは限らない。
+            # MISSING にすると winget が詰まった回だけ doctor が exit 1 になるため、判定でき
+            # なかったことを出す (Get-WingetInstallState の 'Unknown' を丸めないのと同じ扱い)。
+            Write-Status $t.Label 'SKIP' DarkGray '判定不能 (winget の一覧を取得できません)'
+        } elseif ($t.Optional) {
+            # 未導入が正常な状態なので赤くしない。ただし黙って消すと「宣言したのに出ない」
+            # と読めるので、任意ゆえの skip だと分かる行を残す。
+            Write-Status $t.Label 'SKIP' DarkGray '未導入 (任意)'
         } else {
             Write-Status $t.Label 'MISSING' Red
             $missing = $true
