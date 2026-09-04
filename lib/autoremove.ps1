@@ -44,17 +44,10 @@ function Get-BoochWinInstalledPlugin {
 }
 
 # `claude plugin marketplace list` の登録済み marketplace 名を配列で返す (claude 不在なら空)。
+# 実体は lib/claude.ps1 の Get-ClaudeMarketplaceName (CLI 出力書式の解析は claude 側の関心で、
+# marketplace の更新もそれを使う)。この名前は autoremove の既存利用者のために残す。
 function Get-BoochWinRegisteredMarketplace {
-    $cmd = Get-ClaudeCommand
-    if (-not $cmd) { return @() }
-    $out = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
-    $names = New-Object System.Collections.Generic.List[string]
-    foreach ($line in ($out -split "`r?`n")) {
-        if ($line -match '^\s*❯\s+(\S+)') {
-            $names.Add(($Matches[1] -split '@')[0])
-        }
-    }
-    return $names.ToArray()
+    return Get-ClaudeMarketplaceName
 }
 
 # 宣言から外れた名残の「削除候補」を算出して配列で返す (実削除はしない)。1 要素 =

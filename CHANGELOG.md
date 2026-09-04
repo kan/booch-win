@@ -6,6 +6,28 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-04
+
+### Added
+- `Show-ClaudeMarketplaces`（`lib/claude.ps1`）: 宣言した marketplace が登録されているかを
+  doctor へ列挙する。**プラグイン行では代替できない** — marketplace 側が消えても既に入って
+  いるプラグインは enabled のまま古い版で居座るので、`Show-ClaudePlugins` だけ見ていると
+  凍結に気付けない。判定は `Source: GitHub (owner/name)` の固定文字列照合で、参照先の
+  付け替えにも気付ける。
+- `Get-ClaudeMarketplaceName`（`lib/claude.ps1`）: 登録済み marketplace 名を配列で返す。
+  `lib/autoremove.ps1` の `Get-BoochWinRegisteredMarketplace` にあった実装をこちらへ移し
+  （CLI 出力書式の解析は claude 側の関心）、旧名は薄いラッパーとして残した。
+- `Get-ClaudeFailureReason`（`lib/claude.ps1`）: claude の出力から警告に載せる 1 行の理由を
+  作る。進捗と結果を同じ行に吐く書式なので、失敗マーカー（`✘`）以降を本文とみなす。
+
+### Changed
+- `Update-ClaudeMarketplace` が `claude plugin marketplace update` の出力を `Out-Null` で
+  捨てていたのをやめ、失敗理由を警告に載せるようにした。claude は「1 marketplace could not
+  be refreshed: \<name\>」のように**どれが壊れたか**を出力に書くので、捨てると
+  「update failed」としか言えなかった。加えて全体更新が失敗したときは登録済みの名前ごとに
+  引き直し、壊れているものだけを名指しする（正常時は全体更新 1 回のまま）。`-Name` で
+  単体更新もできる。Linux 版 booch 1.12.0 の marketplace ヘルパーと対称。
+
 ## [0.21.0] - 2026-09-03
 
 ### Added
@@ -483,7 +505,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/kan/booch-win/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kan/booch-win/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kan/booch-win/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kan/booch-win/compare/v0.18.0...v0.19.0

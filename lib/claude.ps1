@@ -181,6 +181,36 @@ function Show-ClaudePlugins {
     }
 }
 
+# doctor 向け: 宣言した marketplace が登録されているかを列挙する (情報表示)。
+# **プラグイン行では代替できない** — marketplace 側が消えても、既に入っているプラグインは
+# enabled のまま古い版で居座るので、Show-ClaudePlugins だけ見ていると凍結に気付けない
+# (Linux 側で kan/pike の marketplace.json 消失を数日見逃した)。setup の警告は実行を見て
+# いないと流れて消えるため、状態として見る場所が要る。
+# $Marketplaces は @{ Repo='owner/name'; Name='表示名' } の配列 (config の $ClaudeMarketplaces)。
+# 判定は list の "Source: GitHub (owner/name)" を固定文字列で照合する (Add-ClaudeMarketplace
+# と同じ規約。名前だけの照合より、参照先の付け替えにも気付ける)。
+function Show-ClaudeMarketplaces {
+    param(
+        [Parameter(Mandatory)][object[]]$Marketplaces,
+        [string]$Indent = '  '
+    )
+    if (-not (Test-ClaudeInstalled)) { return }
+    $cmd = Get-ClaudeCommand
+    $list = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
+    if (-not $list) {
+        Write-Status "$Indent(marketplaces)" 'SKIP' Yellow 'marketplace 情報を取得できません'
+        return
+    }
+    foreach ($m in $Marketplaces) {
+        if ($list -match [regex]::Escape("($($m.Repo))")) {
+            Write-Status "$Indent`mkt:$($m.Name)" 'OK' Green $m.Repo
+        } else {
+            Write-Status "$Indent`mkt:$($m.Name)" 'WARN' Yellow `
+                "未登録 ($($m.Repo))。marketplace が消えた / 改名された可能性"
+        }
+    }
+}
+
 # 導入済みプラグインの版を返す (未導入・取得失敗なら空文字)。list の
 # 「❯ <plugin@marketplace>」行で対象ブロックに入り、そのブロック最初の Version: を読む。
 # 別の ❯ 行に入ったら解除するので、Version 行を持たないブロックで次のプラグインの版を
@@ -254,26 +284,86 @@ function Add-ClaudeMarketplace {
     }
 }
 
-# 登録済みの全 marketplace を最新化する (プラグイン有効化より前に呼ぶ)。
+# `claude plugin marketplace list` の登録済み marketplace 名を配列で返す (claude 不在なら空)。
+# 出力書式 (`❯ <name>`) の解析は Get-ClaudePluginList / Show-ClaudePlugins と同じ層に置く。
+function Get-ClaudeMarketplaceName {
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return @() }
+    $out = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($out -split "`r?`n")) {
+        if ($line -match '^\s*❯\s+(\S+)') {
+            $names.Add(($Matches[1] -split '@')[0])
+        }
+    }
+    return $names.ToArray()
+}
+
+# claude の出力から、警告行に載せる 1 行の理由を作る。CLI の出力書式に依存する処理なので
+# ここに置く (Linux booch の _booch_claude_reason と対)。
+#   - 空白と改行を潰して 1 行にする
+#   - claude は進捗と結果を同じ行に吐くので、失敗マーカー (✘) 以降を本文とみなして前を落とす。
+#     マーカーが無ければ何も削らない (書式が変わっても壊れず、切り詰めだけが効く)
+#   - 長すぎると読めないので Max 文字で切る
+function Get-ClaudeFailureReason {
+    param(
+        [string]$Output,
+        [int]$Max = 140
+    )
+    $msg = ($Output -replace '\s+', ' ').Trim()
+    $marker = $msg.IndexOf('✘ ')
+    if ($marker -ge 0) { $msg = $msg.Substring($marker + 2).Trim() }
+    if ($msg.Length -gt $Max) { $msg = $msg.Substring(0, $Max) + '…' }
+    return $msg
+}
+
+# marketplace を最新化する (プラグイン有効化より前に呼ぶ)。-Name を渡せばその 1 つだけ。
 #
 # Add-ClaudeMarketplace は「未登録なら add」しかしないので、これが無いと marketplace の
 # clone が追加時の版のまま古びる。marketplace 側で更新されたプラグイン (スキル・コマンド)
 # が、何度 setup を回しても永久に降ってこない状態になる。
 #
+# **出力を Out-Null で捨てない。** claude は「1 marketplace could not be refreshed: <name>」
+# のように**どれが壊れたか**を出力に書くので、捨てると「update failed」としか言えなくなる。
+# marketplace 側が消えても既存 clone のプラグインは有効なまま古い版で居座るため、名前が
+# 分からないと凍結に気付けない (Linux 側で kan/pike の marketplace.json 消失を踏んだ)。
+# 全体更新が失敗したときは登録済みの名前ごとに再実行して、壊れているものだけを名指しする。
+#
 # 失敗は致命でない (ネットワーク断でも既存の clone のまま続行できる) ので警告に留める。
 # clone の fetch を伴うため Invoke-WithGitHubHttps の下で実行する。
 function Update-ClaudeMarketplace {
+    param([string]$Name)
     $cmd = Get-ClaudeCommand
     if (-not $cmd) { return }
+
+    if ($Name) {
+        $out = Invoke-WithGitHubHttps {
+            Invoke-Quiet { & $cmd plugin marketplace update $Name 2>&1 | Out-String }
+        }
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "$Name marketplace: updated"
+            return $true
+        }
+        Write-Warn ("{0} marketplace: update failed ({1})" -f $Name, (Get-ClaudeFailureReason $out))
+        return $false
+    }
+
     Write-Info 'Updating Claude marketplaces...'
-    Invoke-WithGitHubHttps {
-        Invoke-Quiet { & $cmd plugin marketplace update 2>&1 | Out-Null }
+    $out = Invoke-WithGitHubHttps {
+        Invoke-Quiet { & $cmd plugin marketplace update 2>&1 | Out-String }
     }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok 'Claude marketplaces: updated'
-    } else {
-        Write-Warn 'Claude marketplaces: update failed (既存の clone のまま続行します。ネットワーク / 認証を確認してください)'
+        return $true
     }
+    # 全体の非 0 は「どれかが壊れている」しか言わないので、名前ごとに引き直して内訳を出す。
+    # 正常時は全体更新 1 回で済むため、この余分な実行は壊れているときだけ払う。
+    Write-Warn ("Claude marketplaces: update failed ({0})" -f (Get-ClaudeFailureReason $out))
+    $ok = $true
+    foreach ($n in (Get-ClaudeMarketplaceName)) {
+        if (-not (Update-ClaudeMarketplace -Name $n)) { $ok = $false }
+    }
+    return $ok
 }
 
 # Claude Code のプラグインを有効化・更新する (claude-plugins-official は組込み

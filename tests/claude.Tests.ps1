@@ -232,3 +232,117 @@ Describe 'Install-ClaudeCode' {
         $script:Ok | Should -Be @('Claude Code: installed (2.1.220)')
     }
 }
+
+Describe 'Get-ClaudeMarketplaceName' {
+    It 'marketplace list の ❯ 行から名前を拾う' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { @"
+Configured marketplaces:
+
+  ❯ claude-plugins-official
+    Source: GitHub (anthropics/claude-plugins-official)
+
+  ❯ openai-codex
+    Source: GitHub (openai/codex-plugin-cc)
+"@ }
+        Get-ClaudeMarketplaceName | Should -Be @('claude-plugins-official', 'openai-codex')
+    }
+
+    It 'claude 不在なら空を返す' {
+        Mock Get-ClaudeCommand { $null }
+        Get-ClaudeMarketplaceName | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Show-ClaudeMarketplaces' {
+    BeforeEach {
+        $script:Rows = @()
+        Mock Write-Status { $script:Rows += ("{0}|{1}|{2}" -f $Label, $Status, $Detail) }
+        Mock Test-ClaudeInstalled { $true }
+        Mock Get-ClaudeCommand { 'claude' }
+    }
+
+    It '宣言した marketplace が登録されていれば OK' {
+        Mock Invoke-Quiet { "  ❯ openai-codex`n    Source: GitHub (openai/codex-plugin-cc)`n" }
+        Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'openai/codex-plugin-cc'; Name = 'openai-codex' })
+        $script:Rows[0] | Should -BeLike '*mkt:openai-codex|OK|openai/codex-plugin-cc'
+    }
+
+    # marketplace が消えてもプラグインは enabled のまま残るので、ここで気付けることが要点。
+    It '登録が無ければ WARN で名指しする' {
+        Mock Invoke-Quiet { "  ❯ other`n    Source: GitHub (foo/bar)`n" }
+        Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'kan/pike'; Name = 'pike' })
+        $script:Rows[0] | Should -BeLike '*mkt:pike|WARN|未登録 (kan/pike)*'
+    }
+
+    It '部分一致では登録済みと誤判定しない' {
+        Mock Invoke-Quiet { "  ❯ baz`n    Source: GitHub (foo/bar-baz)`n" }
+        Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'foo/bar'; Name = 'bar' })
+        $script:Rows[0] | Should -BeLike '*|WARN|*'
+    }
+
+    It '一覧が取れなければ SKIP 行だけ出す' {
+        Mock Invoke-Quiet { '' }
+        Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'foo/bar'; Name = 'bar' })
+        $script:Rows | Should -HaveCount 1
+        $script:Rows[0] | Should -BeLike '*(marketplaces)|SKIP|*'
+    }
+}
+
+Describe 'Get-ClaudeFailureReason' {
+    # claude は進捗と結果を同じ行に吐くので、✘ より前の断片は理由ではない。
+    It '進捗の断片を落として ✘ 以降を理由にする' {
+        Get-ClaudeFailureReason 'Updating marketplace: pike...✘ Failed to update: gone' |
+            Should -Be 'Failed to update: gone'
+    }
+
+    It 'マーカーが無い書式でも壊れず 1 行に潰す' {
+        Get-ClaudeFailureReason "error: cannot reach`n  the registry" |
+            Should -Be 'error: cannot reach the registry'
+    }
+
+    It '長すぎる理由は Max で切る' {
+        Get-ClaudeFailureReason -Output 'aaaaaaaaaa' -Max 4 | Should -Be 'aaaa…'
+    }
+}
+
+Describe 'Update-ClaudeMarketplace' {
+    BeforeEach {
+        $script:Msgs = @()
+        Mock Write-Ok { $script:Msgs += $Msg }
+        Mock Write-Info { }
+        Mock Write-Fail { $script:Msgs += "FAIL: $Msg" }
+        Mock Write-Warn { $script:Msgs += "WARN: $Msg" }
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-WithGitHubHttps { & $Script }
+    }
+
+    It '全体更新が成功すればそれだけで終わる (名前ごとの再実行はしない)' {
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; '' }
+        Mock Get-ClaudeMarketplaceName { @('acme') }
+        Update-ClaudeMarketplace | Should -BeTrue
+        Should -Invoke Get-ClaudeMarketplaceName -Times 0
+        $script:Msgs | Should -Be @('Claude marketplaces: updated')
+    }
+
+    # 全体の非 0 は「どれかが壊れている」しか言わない。名指しできることが要点。
+    It '全体更新が失敗したら名前ごとに引き直して壊れたものを名指しする' {
+        Mock Get-ClaudeMarketplaceName { @('broken-one') }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; 'Updating marketplace...✘ Failed to refresh: gone' }
+        Update-ClaudeMarketplace | Should -BeFalse
+        ($script:Msgs -join ' ') |
+            Should -BeLike '*broken-one marketplace: update failed (Failed to refresh: gone)*'
+    }
+
+    It '-Name の失敗は理由付きで警告し $false を返す' {
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; "Updating marketplace: acme...✘ Failed to refresh marketplace 'acme': gone" }
+        Update-ClaudeMarketplace -Name acme | Should -BeFalse
+        $script:Msgs | Should -Be @("WARN: acme marketplace: update failed (Failed to refresh marketplace 'acme': gone)")
+    }
+
+    It '-Name の成功は updated を報告する' {
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; '' }
+        Update-ClaudeMarketplace -Name acme | Should -BeTrue
+        $script:Msgs | Should -Be @('acme marketplace: updated')
+    }
+}
