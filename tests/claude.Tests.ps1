@@ -281,6 +281,14 @@ Describe 'Show-ClaudeMarketplaces' {
         $script:Rows[0] | Should -BeLike '*|WARN|*'
     }
 
+    # 参照先は合っているのに表示名が違う状態。doctor が緑だと、Add-ClaudeMarketplace (Name で
+    # 判定) が毎回 add をやり直し、plugin@<Name> も解決できないことに気付けない。
+    It 'Repo は一致するが表示名が宣言と違えば WARN' {
+        Mock Invoke-Quiet { "  ❯ renamed`n    Source: GitHub (openai/codex-plugin-cc)`n" }
+        Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'openai/codex-plugin-cc'; Name = 'openai-codex' })
+        $script:Rows[0] | Should -BeLike '*mkt:openai-codex|WARN|*表示名が宣言と違う*登録名: renamed*'
+    }
+
     It '一覧が取れなければ SKIP 行だけ出す' {
         Mock Invoke-Quiet { '' }
         Show-ClaudeMarketplaces -Marketplaces @(@{ Repo = 'foo/bar'; Name = 'bar' })
@@ -334,12 +342,30 @@ Describe 'Update-ClaudeMarketplace' {
     }
 
     # 全体の非 0 は「どれかが壊れている」しか言わない。名指しできることが要点。
-    It '全体更新が失敗したら名前ごとに引き直して壊れたものを名指しする' {
-        Mock Get-ClaudeMarketplaceName { @('broken-one') }
-        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; 'Updating marketplace...✘ Failed to refresh: gone' }
+    # 2 件返して片方だけ失敗させ、途中で break / return せず全件回ることも同時に見る。
+    It '全体更新が失敗したら名前ごとに引き直して壊れたものだけを名指しする' {
+        Mock Get-ClaudeMarketplaceName { @('ok-one', 'broken-one') }
+        # 呼び出し順で作り分ける (1 回目 = 全体更新、2 回目 = ok-one、3 回目 = broken-one)。
+        # スクリプトブロックの本文には名前が現れない (`$Name` のまま) ので引数では分けられない。
+        $script:Call = 0
+        Mock Invoke-Quiet {
+            $script:Call++
+            if ($script:Call -eq 2) { $global:LASTEXITCODE = 0; return '' }
+            $global:LASTEXITCODE = 1
+            'Updating marketplace...✘ Failed to refresh: gone'
+        }
         Update-ClaudeMarketplace
-        ($script:Msgs -join ' ') |
-            Should -BeLike '*broken-one marketplace: update failed (Failed to refresh: gone)*'
+        $joined = $script:Msgs -join ' '
+        $joined | Should -BeLike '*ok-one marketplace: updated*'
+        $joined | Should -BeLike '*broken-one marketplace: update failed (Failed to refresh: gone)*'
+    }
+
+    # claude が無言で落ちると理由が空になる。空の括弧にすると、理由を出す前より情報が減る。
+    It '理由が取れないときは従来の案内へフォールバックする' {
+        Mock Get-ClaudeMarketplaceName { @() }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; '' }
+        Update-ClaudeMarketplace
+        ($script:Msgs -join ' ') | Should -BeLike '*update failed (既存の clone のまま続行します*'
     }
 
     It '-Name の失敗は理由付きで警告する' {

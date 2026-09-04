@@ -205,9 +205,22 @@ function Show-ClaudeMarketplaces {
         Write-Status "${Indent}(marketplaces)" 'SKIP' Yellow 'marketplace 情報を取得できません'
         return
     }
+    # 表示名は repo パスではなく marketplace.json の name が決めるので、**参照先 (Repo) と
+    # 表示名 (Name) の両方**を見る。Repo だけ一致して Name が違う状態だと、doctor は緑なのに
+    # Add-ClaudeMarketplace (Name で判定) が毎回 add をやり直し、Enable-ClaudePlugin の
+    # plugin@<Name> も解決できない ―― 一番気付きにくいので専用の警告を出す。
+    $names = @()
+    foreach ($line in ($list -split "`r?`n")) {
+        if ($line -match '^\s*❯\s+(\S+)') { $names += ($Matches[1] -split '@')[0] }
+    }
     foreach ($m in $Marketplaces) {
-        if ($list -match [regex]::Escape("($($m.Repo))")) {
+        $byRepo = $list -match [regex]::Escape("($($m.Repo))")
+        $byName = $names -contains $m.Name
+        if ($byRepo -and $byName) {
             Write-Status "${Indent}mkt:$($m.Name)" 'OK' Green $m.Repo
+        } elseif ($byRepo) {
+            Write-Status "${Indent}mkt:$($m.Name)" 'WARN' Yellow `
+                "$($m.Repo) は登録済みだが表示名が宣言と違う (登録名: $($names -join ', '))"
         } else {
             Write-Status "${Indent}mkt:$($m.Name)" 'WARN' Yellow `
                 "未登録 ($($m.Repo))。marketplace が消えた / 改名された可能性"
@@ -315,10 +328,22 @@ function Get-ClaudeFailureReason {
         [int]$Max = 140
     )
     $msg = ($Output -replace '\s+', ' ').Trim()
-    $marker = $msg.IndexOf('✘ ')
+    # 序数比較で探す。String.IndexOf(String) の既定は culture-sensitive (PS5.1 は
+    # CurrentCulture、PS7 は ICU) で、意図はただの部分文字列探索なので Ordinal を明示する。
+    $marker = $msg.IndexOf('✘ ', [StringComparison]::Ordinal)
     if ($marker -ge 0) { $msg = $msg.Substring($marker + 2).Trim() }
     if ($msg.Length -gt $Max) { $msg = $msg.Substring(0, $Max) + '…' }
     return $msg
+}
+
+# marketplace 更新の失敗時に括弧へ入れる注記。理由が取れればそれを、取れなければ従来の案内を
+# 返す。**空の括弧にしない** —— claude が無言で落ちた (kill された / 出力を吐かない) ときに
+# 「update failed ()」になると、理由を出す前より情報が減る。
+function Get-ClaudeUpdateFailureNote { # Output
+    param([string]$Output)
+    $reason = Get-ClaudeFailureReason $Output
+    if ($reason) { return $reason }
+    return '既存の clone のまま続行します。ネットワーク / 認証を確認してください'
 }
 
 # marketplace を最新化する (プラグイン有効化より前に呼ぶ)。-Name を渡せばその 1 つだけ。
@@ -348,7 +373,7 @@ function Update-ClaudeMarketplace {
             Write-Ok "$Name marketplace: updated"
             return
         }
-        Write-Warn ("{0} marketplace: update failed ({1})" -f $Name, (Get-ClaudeFailureReason $out))
+        Write-Warn ("{0} marketplace: update failed ({1})" -f $Name, (Get-ClaudeUpdateFailureNote $out))
         return
     }
 
@@ -362,7 +387,7 @@ function Update-ClaudeMarketplace {
     }
     # 全体の非 0 は「どれかが壊れている」しか言わないので、名前ごとに引き直して内訳を出す。
     # 正常時は全体更新 1 回で済むため、この余分な実行は壊れているときだけ払う。
-    Write-Warn ("Claude marketplaces: update failed ({0})" -f (Get-ClaudeFailureReason $out))
+    Write-Warn ("Claude marketplaces: update failed ({0})" -f (Get-ClaudeUpdateFailureNote $out))
     foreach ($n in (Get-ClaudeMarketplaceName)) {
         Update-ClaudeMarketplace -Name $n
     }

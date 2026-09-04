@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-09-04
+
+### Fixed
+- `Show-ClaudeMarketplaces` が参照先 (`Repo`) しか見ておらず、**表示名 (`Name`) が宣言と
+  食い違っている状態を緑で通していた**。marketplace の表示名は repo パスではなく
+  `marketplace.json` の `name` が決めるので、両者がずれると `Add-ClaudeMarketplace`
+  （`Name` で判定）が毎回 add をやり直し、`Enable-ClaudePlugin` の `plugin@<Name>` も解決
+  できない。一番気付きにくい壊れ方なので、専用の警告（登録名を併記）を出すようにした。
+- marketplace 更新の失敗で claude が無言のとき（kill された / 出力を吐かない）、
+  `update failed ()` と空の括弧になり、理由を出す前より情報が減っていた。理由が取れない
+  ときは従来の案内（「既存の clone のまま続行します。ネットワーク / 認証を確認してください」）
+  へフォールバックする。
+- `Get-ClaudeFailureReason` の `IndexOf('✘ ')` が culture-sensitive なオーバーロード
+  （PS5.1 は CurrentCulture、PS7 は ICU 比較）だったのを `[StringComparison]::Ordinal` に
+  した。意図は部分文字列探索なので序数比較が正確で速い。
+
+### Tests
+- 全体更新の失敗テストで `Get-ClaudeMarketplaceName` が 2 件返すようにし、片方だけ失敗させる
+  形にした。壊れたものだけを名指しすることに加え、ループが途中で `break` / `return` せず
+  全件回ることも担保する。
+
 ## [0.23.0] - 2026-09-04
 
 ### Added
@@ -533,7 +554,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/kan/booch-win/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/kan/booch-win/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kan/booch-win/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kan/booch-win/compare/v0.20.0...v0.21.0
