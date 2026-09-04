@@ -191,21 +191,25 @@ function Show-ClaudePlugins {
 # と同じ規約。名前だけの照合より、参照先の付け替えにも気付ける)。
 function Show-ClaudeMarketplaces {
     param(
-        [Parameter(Mandatory)][object[]]$Marketplaces,
+        # 既定は空 = 何も出さない。Mandatory にすると宣言を空にした瞬間 (marketplace を全部
+        # やめた等) にパラメータバインドの終了エラーで doctor ごと落ちる。Show-ClaudePlugins と
+        # 同じく「出すものが無ければ黙る」に揃える。
+        [object[]]$Marketplaces = @(),
         [string]$Indent = '  '
     )
+    if (-not $Marketplaces) { return }
     if (-not (Test-ClaudeInstalled)) { return }
     $cmd = Get-ClaudeCommand
     $list = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
     if (-not $list) {
-        Write-Status "$Indent(marketplaces)" 'SKIP' Yellow 'marketplace 情報を取得できません'
+        Write-Status "${Indent}(marketplaces)" 'SKIP' Yellow 'marketplace 情報を取得できません'
         return
     }
     foreach ($m in $Marketplaces) {
         if ($list -match [regex]::Escape("($($m.Repo))")) {
-            Write-Status "$Indent`mkt:$($m.Name)" 'OK' Green $m.Repo
+            Write-Status "${Indent}mkt:$($m.Name)" 'OK' Green $m.Repo
         } else {
-            Write-Status "$Indent`mkt:$($m.Name)" 'WARN' Yellow `
+            Write-Status "${Indent}mkt:$($m.Name)" 'WARN' Yellow `
                 "未登録 ($($m.Repo))。marketplace が消えた / 改名された可能性"
         }
     }
@@ -342,10 +346,10 @@ function Update-ClaudeMarketplace {
         }
         if ($LASTEXITCODE -eq 0) {
             Write-Ok "$Name marketplace: updated"
-            return $true
+            return
         }
         Write-Warn ("{0} marketplace: update failed ({1})" -f $Name, (Get-ClaudeFailureReason $out))
-        return $false
+        return
     }
 
     Write-Info 'Updating Claude marketplaces...'
@@ -354,16 +358,14 @@ function Update-ClaudeMarketplace {
     }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok 'Claude marketplaces: updated'
-        return $true
+        return
     }
     # 全体の非 0 は「どれかが壊れている」しか言わないので、名前ごとに引き直して内訳を出す。
     # 正常時は全体更新 1 回で済むため、この余分な実行は壊れているときだけ払う。
     Write-Warn ("Claude marketplaces: update failed ({0})" -f (Get-ClaudeFailureReason $out))
-    $ok = $true
     foreach ($n in (Get-ClaudeMarketplaceName)) {
-        if (-not (Update-ClaudeMarketplace -Name $n)) { $ok = $false }
+        Update-ClaudeMarketplace -Name $n
     }
-    return $ok
 }
 
 # Claude Code のプラグインを有効化・更新する (claude-plugins-official は組込み

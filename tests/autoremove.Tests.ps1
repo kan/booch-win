@@ -10,6 +10,18 @@ BeforeAll {
     . (Join-Path $lib 'autoremove.ps1')
 }
 
+# 実装は lib/claude.ps1 の Get-ClaudeMarketplaceName へ委譲している。plan 側のテストは
+# この関数を丸ごと Mock するので、委譲先の綴りを間違えても parse も Pester も通ってしまい、
+# 実機で初めて CommandNotFoundException になる (PowerShell の parse は未定義関数を検出しない)。
+# ここだけは Mock せずに実体を通す。
+Describe 'Get-BoochWinRegisteredMarketplace' {
+    It 'Get-ClaudeMarketplaceName へ委譲する' {
+        Mock Get-ClaudeMarketplaceName { @('acme', 'openai-codex') }
+        Get-BoochWinRegisteredMarketplace | Should -Be @('acme', 'openai-codex')
+        Should -Invoke Get-ClaudeMarketplaceName -Times 1
+    }
+}
+
 Describe 'Get-BoochWinAutoremovePlan' {
     # 注: claude の有無 (Test-ClaudeInstalled) の mock は各 It で明示する。BeforeEach の既定を
     # It で上書きすると mock の優先順位が紛らわしくなるため (実 claude を誤って叩く)。

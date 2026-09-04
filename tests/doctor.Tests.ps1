@@ -123,6 +123,42 @@ Describe 'Show-ToolList' {
     }
 }
 
+Describe 'Get-BoochWinDisplayWidth / Format-BoochWinPadRight' {
+    It 'ASCII は文字数と同じ' {
+        Get-BoochWinDisplayWidth 'sshenc (TPM bridge)' | Should -Be 19
+    }
+
+    # 桁揃えの本題。日本語は 1 文字 2 桁で数えないと、その行だけ [OK] が右へずれる。
+    It '漢字・かなは 2 桁で数える' {
+        Get-BoochWinDisplayWidth '登録' | Should -Be 4
+        Get-BoochWinDisplayWidth 'CorvusSKK TIP 登録' | Should -Be 18
+        Get-BoochWinDisplayWidth 'ssh-agent パイプ' | Should -Be 16
+    }
+
+    It '全角記号も 2 桁' {
+        Get-BoochWinDisplayWidth '（）' | Should -Be 4
+    }
+
+    # サロゲートペア (char 2 個) を 4 桁と数えない。
+    It '絵文字は 2 桁 (サロゲートペアを二重に数えない)' {
+        Get-BoochWinDisplayWidth ([char]::ConvertFromUtf32(0x1F600)) | Should -Be 2
+    }
+
+    It '空文字は 0' {
+        Get-BoochWinDisplayWidth '' | Should -Be 0
+    }
+
+    It '表示幅で右詰めする' {
+        Format-BoochWinPadRight 'ab' 5 | Should -Be 'ab   '
+        # 幅 4 を占めるので埋めは 1 字だけ (文字数で数えると 3 字埋めてずれる)。
+        Format-BoochWinPadRight '登録' 5 | Should -Be '登録 '
+    }
+
+    It '幅を超えていれば埋めない' {
+        Format-BoochWinPadRight 'abcdef' 3 | Should -Be 'abcdef'
+    }
+}
+
 Describe 'Show-DiskFree' {
     BeforeEach { Mock Write-Host {}; Mock Write-Status {} }
 

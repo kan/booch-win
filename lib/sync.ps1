@@ -74,7 +74,9 @@ function Get-SyncPairLabel {
 # はみ出しも過剰な余白も出さない (Write-Status の -LabelWidth に渡す)。
 function Get-SyncPairLabelWidth {
     param([Parameter(Mandatory)][array]$Pairs)
-    return (($Pairs | ForEach-Object { (Get-SyncPairLabel $_).Length } |
+    # 幅は文字数ではなく表示幅で測る (Write-Status の埋めと同じ尺度。日本語を含むラベルが
+    # 混ざったとき、文字数で測るとその行だけ [OK] の位置がずれる)。
+    return (($Pairs | ForEach-Object { Get-BoochWinDisplayWidth (Get-SyncPairLabel $_) } |
             Measure-Object -Maximum).Maximum) + 2
 }
 

@@ -6,6 +6,34 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-04
+
+### Added
+- `Get-BoochWinDisplayWidth` / `Format-BoochWinPadRight`（`lib/common.ps1`）: 端末に表示した
+  ときの桁数で測る / 右詰めする。East Asian Wide・Fullwidth（漢字・かな・全角記号）を 2 桁、
+  サロゲートペア（絵文字）を 2 桁として数える。
+
+### Fixed
+- `Write-Status` の桁揃えが `.PadRight`（.NET の**文字数**）だったため、日本語を含むラベルの
+  行だけ `[OK]` が右へずれていた（全角 1 文字は 1 文字と数えられるのに端末では 2 桁を占める）。
+  表示幅で埋めるようにした。`Get-SyncPairLabelWidth`（`lib/sync.ps1`）の幅算出も同じ尺度に
+  揃えた。これで doctor のラベルに日本語を使ってよくなる。
+- `Write-Status` の既定 `LabelWidth` を 28 → 33 にした。0.22.0 で足した
+  `    mkt:claude-plugins-official`（31 桁）が 28 を超え、その行だけ `[OK]` がラベルに密着して
+  いた。ラベルを足すときの計算をコメントに残してある。
+- `Update-ClaudeMarketplace` が `$true` / `$false` を返していたため、戻り値を代入せずに呼ぶ
+  利用側（`dotfiles-win` の Claude 節）のコンソールへ `True` / `False` が素の行として漏れて
+  いた。PowerShell は代入されなかった戻り値を出力ストリームへ流すため。**値を返さない**形に
+  戻し、回帰ガードのテストを足した。
+- `Show-ClaudeMarketplaces` の `-Marketplaces` が `Mandatory` で、宣言を空にすると
+  パラメータバインドの終了エラーで doctor ごと落ちていた。既定 `@()` にし、`Show-ClaudePlugins`
+  と同じく「出すものが無ければ黙る」に揃えた。
+
+### Tests
+- `Get-BoochWinRegisteredMarketplace`（`lib/autoremove.ps1`）が `Get-ClaudeMarketplaceName` へ
+  委譲していることの検証を追加。plan 側のテストはこの関数を丸ごと Mock するため、委譲先の
+  綴りを間違えても parse も Pester も通り、実機で初めて `CommandNotFoundException` になる。
+
 ## [0.22.0] - 2026-09-04
 
 ### Added
@@ -505,7 +533,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kan/booch-win/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kan/booch-win/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kan/booch-win/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kan/booch-win/compare/v0.19.0...v0.20.0

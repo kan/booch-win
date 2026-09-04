@@ -287,6 +287,14 @@ Describe 'Show-ClaudeMarketplaces' {
         $script:Rows | Should -HaveCount 1
         $script:Rows[0] | Should -BeLike '*(marketplaces)|SKIP|*'
     }
+
+    # 宣言を空にした瞬間に doctor ごと落ちないこと (Mandatory だと空配列でバインドが失敗する)。
+    It '宣言が空なら黙って何もしない' {
+        Mock Invoke-Quiet { '' }
+        { Show-ClaudeMarketplaces -Marketplaces @() } | Should -Not -Throw
+        { Show-ClaudeMarketplaces } | Should -Not -Throw
+        $script:Rows | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Get-ClaudeFailureReason' {
@@ -320,7 +328,7 @@ Describe 'Update-ClaudeMarketplace' {
     It '全体更新が成功すればそれだけで終わる (名前ごとの再実行はしない)' {
         Mock Invoke-Quiet { $global:LASTEXITCODE = 0; '' }
         Mock Get-ClaudeMarketplaceName { @('acme') }
-        Update-ClaudeMarketplace | Should -BeTrue
+        Update-ClaudeMarketplace
         Should -Invoke Get-ClaudeMarketplaceName -Times 0
         $script:Msgs | Should -Be @('Claude marketplaces: updated')
     }
@@ -329,20 +337,29 @@ Describe 'Update-ClaudeMarketplace' {
     It '全体更新が失敗したら名前ごとに引き直して壊れたものを名指しする' {
         Mock Get-ClaudeMarketplaceName { @('broken-one') }
         Mock Invoke-Quiet { $global:LASTEXITCODE = 1; 'Updating marketplace...✘ Failed to refresh: gone' }
-        Update-ClaudeMarketplace | Should -BeFalse
+        Update-ClaudeMarketplace
         ($script:Msgs -join ' ') |
             Should -BeLike '*broken-one marketplace: update failed (Failed to refresh: gone)*'
     }
 
-    It '-Name の失敗は理由付きで警告し $false を返す' {
+    It '-Name の失敗は理由付きで警告する' {
         Mock Invoke-Quiet { $global:LASTEXITCODE = 1; "Updating marketplace: acme...✘ Failed to refresh marketplace 'acme': gone" }
-        Update-ClaudeMarketplace -Name acme | Should -BeFalse
+        Update-ClaudeMarketplace -Name acme
         $script:Msgs | Should -Be @("WARN: acme marketplace: update failed (Failed to refresh marketplace 'acme': gone)")
     }
 
     It '-Name の成功は updated を報告する' {
         Mock Invoke-Quiet { $global:LASTEXITCODE = 0; '' }
-        Update-ClaudeMarketplace -Name acme | Should -BeTrue
+        Update-ClaudeMarketplace -Name acme
         $script:Msgs | Should -Be @('acme marketplace: updated')
+    }
+
+    # PowerShell は代入されなかった戻り値をそのまま出力に流す。利用側 (dotfiles-win の
+    # Claude 節) は戻り値を捨てて呼ぶので、真偽値を返すとコンソールに True / False が漏れる。
+    It '呼び出し側へ値を返さない (コンソールへ漏らさない)' {
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; '' }
+        Mock Get-ClaudeMarketplaceName { @() }
+        (Update-ClaudeMarketplace) | Should -BeNullOrEmpty
+        (Update-ClaudeMarketplace -Name acme) | Should -BeNullOrEmpty
     }
 }
