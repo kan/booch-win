@@ -19,19 +19,20 @@ jobs:
     # （PowerShell の解析と Pester に要る）と違って ubuntu で足りる。
     runs-on: ubuntu-latest
     steps:
-      # タグオブジェクトの種別を見るため、浅い clone ではなく履歴とタグを全部取る。
-      # 既定（fetch-depth: 1）では checkout がタグの指すコミットだけを取り、ローカルの
-      # refs/tags/<name> をそのコミットへ向けて作り直すので、annotated タグでも
-      # `git cat-file -t` は commit を返す（省いた版が v0.23.2 の push で誤検知した）。
+      # VERSION を読むためだけなので浅い clone でよい（タグの種別はここでは取れない。下記）。
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
+      # actions/checkout はタグ push でも refspec `+<コミット SHA>:refs/tags/<名前>` で取るため、
+      # ローカルの refs/tags/<名前> は annotated タグでもコミットを直接指す（fetch-depth を
+      # 増やしても変わらない）。種別を見るにはタグ ref そのものを取り直す必要がある。
+      # v0.23.2 の push で、これを省いた版が正しく打ったタグを lightweight と誤検知した。
+      #
       # $GITHUB_REF_NAME は Actions が渡す環境変数。${{ }} で式を run へ展開すると
       # タグ名経由のスクリプト注入を許すため、環境変数のまま参照する。
       - name: タグが annotated か
         run: |
           set -euo pipefail
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           type=$(git cat-file -t "$GITHUB_REF_NAME")
           if [ "$type" != tag ]; then
             echo "::error::$GITHUB_REF_NAME は lightweight タグ（$type）。annotated で打ち直す: git tag -f -a $GITHUB_REF_NAME -m $GITHUB_REF_NAME && git push -f origin $GITHUB_REF_NAME"
