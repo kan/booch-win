@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-09-10
+
 ### Added
 - `.github/workflows/release-tag.yml`: `v*` タグの push で、タグが annotated であることと
   `VERSION` がタグ名と一致することを検査する。どちらも README のリリース手順が散文で定めて
@@ -566,7 +568,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.2...HEAD
+[0.23.2]: https://github.com/kan/booch-win/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/kan/booch-win/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/kan/booch-win/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kan/booch-win/compare/v0.21.0...v0.22.0
