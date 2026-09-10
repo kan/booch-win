@@ -169,9 +169,18 @@ pin する**（`vendor/booch-win` を新タグへ進めてコミット）。
 1. `VERSION` を上げる（SemVer）。`booch-win version` が新版を返すことを確認。
 2. `CHANGELOG.md` の `[Unreleased]` を新バージョンの節へ繰り上げ、日付と比較リンクを付ける。
 3. 変更をコミット（日本語メッセージ。bump とノートを含む）。
-4. タグを打って push: `git tag v0.1.0 && git push origin v0.1.0`。
+4. タグを打って push: `git tag -a v0.1.0 -m v0.1.0 && git push origin v0.1.0`。
 5. リリース作成: `gh release create v0.1.0 --title v0.1.0 --notes "<CHANGELOG の当該節>"`。
 6. 消費側の pin を更新（dotfiles の `vendor/booch-win` を新タグへ）。
+
+**タグは annotated（`-a`）で打つ**。`-a` 無しの lightweight タグは `git describe`（`--tags`
+無し）から無視されるため、消費側が `git submodule status` / `git describe` で pin 先を確認すると
+1 つ前のリリースが表示される。過去のタグは lightweight（`v0.1.0`〜`v0.5.1` / `v0.7.0`〜`v0.13.0`）と
+annotated が混在しているが、配布済みのタグを貼り直しても手元に古いタグを持つ clone は fetch で
+更新されず種別が食い違うため、打ち直さず今後のタグだけを揃える（過去版を pin して確認する側は
+`git describe --tags` を使えば混在の影響を受けない）。この前提（annotated であること・`VERSION` と
+タグ名の一致）は `v*` タグの push で `.github/workflows/release-tag.yml` が検査するので、打ち間違えれば
+赤で気付く。
 
 ## 将来
 

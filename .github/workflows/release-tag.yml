@@ -1,0 +1,50 @@
+# リリースタグ（v*）が満たすべき前提を機械で検査する。README「リリース」が散文で定めている
+# 2 点 —— タグは annotated で打つこと、`VERSION` がタグ名と一致すること —— は手順書だけでは
+# 守られず、実際に過去のタグは lightweight / annotated が混在した。lightweight タグは
+# `git describe`（`--tags` 無し）から無視されるため、submodule で pin した版を確認すると
+# 1 つ前のリリースが表示される。押した直後に赤で気付けるようにする。
+name: Release Tag
+
+on:
+  push:
+    tags: ["v*"]
+
+# 検査のみで書き込み不要。
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # 検査内容が git とテキスト比較だけで OS に依存しないため、ci.yml の windows-latest
+    # （PowerShell の解析と Pester に要る）と違って ubuntu で足りる。
+    runs-on: ubuntu-latest
+    steps:
+      # 既定の浅い clone（depth 1）で足りる。タグ push では checkout が対象タグの ref を
+      # 取るので、annotated ならタグオブジェクトも来て `git cat-file -t` で種別を判定できる
+      # （Linux 版 booch の同名 workflow は fetch-depth: 0 を渡しているが、履歴は使わない）。
+      - uses: actions/checkout@v5
+
+      # $GITHUB_REF_NAME は Actions が渡す環境変数。${{ }} で式を run へ展開すると
+      # タグ名経由のスクリプト注入を許すため、環境変数のまま参照する。
+      - name: タグが annotated か
+        run: |
+          set -euo pipefail
+          type=$(git cat-file -t "$GITHUB_REF_NAME")
+          if [ "$type" != tag ]; then
+            echo "::error::$GITHUB_REF_NAME は lightweight タグ（$type）。annotated で打ち直す: git tag -f -a $GITHUB_REF_NAME -m $GITHUB_REF_NAME && git push -f origin $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME: annotated"
+
+      # VERSION は LF 固定（.gitattributes）だが、Windows 側で書かれて CR が混じっても
+      # 「見た目は同じなのに不一致」で悩まないよう落としてから比べる。
+      - name: VERSION がタグ名と一致するか
+        run: |
+          set -euo pipefail
+          want="${GITHUB_REF_NAME#v}"
+          have=$(tr -d '\r' < VERSION)
+          if [ "$want" != "$have" ]; then
+            echo "::error::VERSION ($have) がタグ ($GITHUB_REF_NAME) と一致しない。どちらかを直す"
+            exit 1
+          fi
+          echo "VERSION: $have"

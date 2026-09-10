@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### Added
+- `.github/workflows/release-tag.yml`: `v*` タグの push で、タグが annotated であることと
+  `VERSION` がタグ名と一致することを検査する。どちらも README のリリース手順が散文で定めて
+  いるだけだったため守られず、実際に過去のタグは lightweight / annotated が混在した。
+
+### Changed
+- README のリリース手順のタグ作成を annotated（`git tag -a`）に統一した。lightweight タグは
+  `git describe`（`--tags` 無し）から無視されるため、submodule で pin した版を
+  `git submodule status` / `git describe` で確認すると 1 つ前のリリースが表示されていた。
+  **今後のタグだけ**が annotated になる。既存タグは lightweight のまま残すので、過去版を
+  pin して確認するときは `git describe --tags` を使う（対象は README のリリース節に挙げた）。
+
 ## [0.23.1] - 2026-09-04
 
 ### Fixed
