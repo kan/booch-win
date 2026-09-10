@@ -19,10 +19,13 @@ jobs:
     # （PowerShell の解析と Pester に要る）と違って ubuntu で足りる。
     runs-on: ubuntu-latest
     steps:
-      # 既定の浅い clone（depth 1）で足りる。タグ push では checkout が対象タグの ref を
-      # 取るので、annotated ならタグオブジェクトも来て `git cat-file -t` で種別を判定できる
-      # （Linux 版 booch の同名 workflow は fetch-depth: 0 を渡しているが、履歴は使わない）。
+      # タグオブジェクトの種別を見るため、浅い clone ではなく履歴とタグを全部取る。
+      # 既定（fetch-depth: 1）では checkout がタグの指すコミットだけを取り、ローカルの
+      # refs/tags/<name> をそのコミットへ向けて作り直すので、annotated タグでも
+      # `git cat-file -t` は commit を返す（省いた版が v0.23.2 の push で誤検知した）。
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       # $GITHUB_REF_NAME は Actions が渡す環境変数。${{ }} で式を run へ展開すると
       # タグ名経由のスクリプト注入を許すため、環境変数のまま参照する。
