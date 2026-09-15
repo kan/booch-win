@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+## [0.23.3] - 2026-09-15
+
+### Fixed
+- README の取り込み例が、未定義の `$boochWinRoot` から `lib/bootstrap.ps1` を読んでから
+  `Resolve-BoochWinRoot` を呼ぶ順序になっていて、書いてあるとおりには動かなかった。雛形
+  （`templates/dotfiles-win/setup-win/dotfiles-win.ps1`）と同じく、候補を順に探してルートを
+  決めてから lib を読む形に直した。
+- 雛形 README が「隣の `../booch-win` は submodule より優先される」と書いていた。雛形のコードは
+  `BOOCH_WIN_ROOT` → `vendor/booch-win` → `../booch-win` の順に探すので、submodule より優先
+  されるのは環境変数だけである。
+- `win.ps1` の TODO と `tests/sandbox/manual-smoke.md` が、無関係な #7（リリース運用）を指して
+  いた。App Installer 不在時の代替手段の検討を #11 として起こし、参照を付け替えた。
+
+### Changed
+- CLAUDE.md の lib 一覧とサブコマンドに `git` / `scaffold` を足し、README のテスト構成と
+  scaffold の生成物を実物に合わせた。`bin/booch-win.ps1` のヘッダからサブコマンド一覧を外し、
+  `Show-BoochWinUsage` だけが持つようにした。
+- README / CLAUDE.md / templates / manual-smoke.md の表記を整えた（textlint の指摘、地の文の
+  ダッシュと並列の中黒、長い文の分割）。
+
 ## [0.23.2] - 2026-09-10
 
 ### Added
@@ -568,7 +588,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.2...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.3...HEAD
+[0.23.3]: https://github.com/kan/booch-win/compare/v0.23.2...v0.23.3
 [0.23.2]: https://github.com/kan/booch-win/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/kan/booch-win/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/kan/booch-win/compare/v0.22.0...v0.23.0
