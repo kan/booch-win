@@ -42,7 +42,7 @@ winget --version   # 出れば成功
 > appx を入れてから winget.msixbundle を再実行する（NuGet `Microsoft.UI.Xaml` から取得）。
 > ここが Sandbox で最も手間のかかる箇所。winget の導入を省いて**フォールバック動作だけ**確認したい
 > 場合は本ステップを飛ばし、`win.ps1` が「App Installer 不在」で分かりやすいメッセージを出して
-> 止まるかを見る（`win.ps1` の `Initialize-Prereq` にある TODO）。
+> 止まるかを見る（`win.ps1` の `Initialize-Prereq` にある TODO。代替手段の検討は #11）。
 
 ## 3. ワンライナーを実行（公開版）
 

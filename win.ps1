@@ -73,7 +73,7 @@ function Initialize-Prereq {
     }
 
     if (-not (Test-Command winget)) {
-        # TODO(#7): App Installer 不在フォールバック（Git standalone 直 DL / App Installer 導入案内）
+        # TODO(#11): App Installer 不在フォールバック（Git standalone 直 DL / App Installer 導入案内）
         throw 'winget (App Installer) が見つかりません。Microsoft Store の "アプリ インストーラー" を入れてから再実行してください。'
     }
     Write-Ok 'winget available'

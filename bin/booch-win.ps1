@@ -1,15 +1,10 @@
 ﻿#Requires -Version 5.1
 #
-# bin/booch-win.ps1: booch-win 補助 CLI (help / version)。
+# bin/booch-win.ps1: booch-win 補助 CLI。
 #
 # Linux 側 booch の bin/booch に対応する。本体はあくまで dot-source して使うライブラリで、
-# この CLI は補助。公開 API をソースを開かずに引けるようにする help と、VERSION を返す
-# version を提供する。
-#
-# 使い方:
-#   ./bin/booch-win.ps1 help            このヘルプ + モジュール一覧
-#   ./bin/booch-win.ps1 help <name>     モジュール (例: winget / sync) の API
-#   ./bin/booch-win.ps1 version         バージョン (VERSION ファイル) を表示
+# この CLI は補助。サブコマンドの一覧は下の Show-BoochWinUsage が持つ
+# (`./bin/booch-win.ps1 help` で表示)。
 
 $ErrorActionPreference = 'Stop'
 
