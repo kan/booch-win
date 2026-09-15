@@ -2,7 +2,7 @@
 
 Windows 開発環境の設定を管理する private リポジトリ（[booch-win](https://github.com/kan/booch-win)
 ベース）。汎用機構（winget 導入 / 設定同期 / doctor 等）は booch-win に任せ、ここには個人固有の
-選択（何を入れる・何を同期する）だけを置く。
+選択（何を入れるか、何を同期するか）だけを置く。
 
 ## セットアップ
 
@@ -16,8 +16,8 @@ git add .gitmodules vendor/booch-win
 git commit -m "booch-win を vendor に追加（v0.1.0 に pin）"
 ```
 
-> 開発中に booch-win 本体をいじる場合は、隣に clone（`../booch-win`）を置くか、環境変数
-> `BOOCH_WIN_ROOT` で場所を明示すると submodule より優先される。
+> 開発中に booch-win 本体を編集する場合は、環境変数 `BOOCH_WIN_ROOT` で clone の場所を明示すると
+> submodule より優先される。隣に置いた clone（`../booch-win`）は、`vendor/booch-win` が無いときだけ使われる。
 
 ## 使い方
 

@@ -17,15 +17,16 @@
   `goto :label` のラベル解決に失敗する（"The system cannot find the batch label specified"）
   ことが、特に**ラベルがファイル末尾にある**場合に報告されている。本 `.cmd` は
   `:collect` / `:run` ラベルを引数収集ループに使うため、この構文が該当する。
-- それでも LF を採っているのは、(1) リポジトリ全体を LF 固定にして shebang 破損や
-  環境差を避ける方針との一貫性、(2) 実運用中の同構成 `.cmd`（LF）が Windows 11 の
-  cmd.exe で問題なく動いている実績、(3) 本ファイルのラベルは末尾ではなく中間にあり、
-  報告されている失敗条件に当たりにくい、による。
+- それでも LF を採っている理由は次の 3 つ。
+  1. リポジトリ全体を LF 固定にして shebang の破損や環境差を避ける方針と、一貫させるため
+  2. 実運用中の同じ構成の `.cmd`（LF）が、Windows 11 の cmd.exe で問題なく動いているため
+  3. 本ファイルのラベルは末尾ではなく中間にあり、報告されている失敗条件に当たりにくいため
 - **もし** cmd.exe / PowerShell から拡張子なし `dotfiles-win` 呼び出しで
   「バッチラベルが見つかりません」が出たら、この `.cmd` を CRLF に切り替える
   （`.gitattributes` を `*.cmd text eol=crlf` にする）ことで解消できる。`.ps1` 本体と
   bash ラッパー経由の呼び出しはこの問題の影響を受けない。
-- 上流での検証・方針追跡は [kan/booch-win#8](https://github.com/kan/booch-win/issues/8)。
+- 上流での検証結果は [kan/booch-win#8](https://github.com/kan/booch-win/issues/8)（クローズ済み）。
+  Windows 11 の cmd.exe では、ラベルがファイル末尾にあり末尾改行も無い条件でも、LF のまま正常に動いた。
 
 ## 構成の考え方
 

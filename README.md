@@ -7,9 +7,9 @@ Windows 開発環境のブートストラップを担う公開リポジトリ。
 1. **ワンライナー bootstrap（`win.ps1`）のホスト**: 素の Windows から private な dotfiles を入れて `dotfiles-win setup` が走る状態までを 1 コマンドで持っていく。
 2. **dotfiles-win 汎用ライブラリ（`lib/*.ps1`）のホスト**: winget / sync / doctor / GitHub release / 各種ツール導入など、個人設定に依存しない PowerShell 実装を提供する。
 
-> Linux 側の [booch](https://github.com/kan/booch)（Bash 製・WSL2/Ubuntu 向け）の Windows 版に
+> Linux 側の [booch](https://github.com/kan/booch)（Bash 製、WSL2 / Ubuntu 向け）の Windows 版に
 > あたる位置づけ。ただし booch とは別実装（PowerShell / winget ベース）で、コードは共有せず
-> **規約（責務分離・doctor 出力・result 語彙）のみ共有**する。
+> **規約（責務分離、doctor 出力、result 語彙）だけを共有**する。
 
 ## 使い方（ワンライナー）
 
@@ -29,13 +29,13 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 3. 現セッションの PATH を再解決して `git` / `gh` を即利用可能にする
 4. `gh auth login`（ブラウザ/デバイスフロー）で GitHub 認証
 5. private な dotfiles を clone（既存なら pull）
-6. `setup-win/dotfiles-win.ps1 setup` へ委譲（winget 群導入・設定同期・UAC 昇格は dotfiles-win 本体が担う）
+6. `setup-win/dotfiles-win.ps1 setup` へ委譲（winget パッケージの導入、設定の同期、UAC 昇格は dotfiles-win 本体が行う）
 
 ### 設定（環境変数）
 
-設定はすべて環境変数で渡す。win.ps1 は **param ブロックを持たない** — Windows PowerShell 5.1 の
-`irm | iex`（文字列を Invoke-Expression で評価）は版によって先頭の `param(...)` を解釈できず
-「代入式が無効」等のパースエラーになるため、env だけで動かしてどの 5.1 でも確実に通す。
+設定はすべて環境変数で渡す。win.ps1 は **param ブロックを持たない**。Windows PowerShell 5.1 の
+`irm | iex`（文字列を Invoke-Expression で評価）は、版によって先頭の `param(...)` を解釈できず
+「代入式が無効」等のパースエラーになる。env だけで動かせば、版に関係なく 5.1 で起動できる。
 
 ```powershell
 $env:BOOCH_WIN_REPO = 'youraccount/dotfiles'   # 必須
@@ -51,52 +51,57 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 ## 設計上の注意
 
-- **Windows PowerShell 5.1 互換で書く**: 素の Windows は `pwsh` 未導入のため、bootstrap は 5.1 で
-  動く構文に限定する（`pwsh` は dotfiles-win 側で winget 導入される）。
+- **Windows PowerShell 5.1 互換で書く**。素の Windows には `pwsh` が入っていないので、bootstrap は
+  5.1 で動く構文に限定する（`pwsh` は dotfiles-win 側が winget で導入する）。
 - **`irm | iex` は ExecutionPolicy を変更せず動く**（ファイル実行ではないため）。
-- **冪等**: 各ステップ「無ければ入れる / 既存なら pull」。再実行で壊れない。
+- 各ステップを冪等にする。「無ければ入れる / 既存なら pull」なので、再実行しても同じ状態に収束する。
 
 ## `lib/` の位置づけ
 
 `lib/*.ps1` は dotfiles-win から dot-source される汎用処理です。
 
-- `common.ps1`: 表示・共通実行ヘルパー
+- `common.ps1`: 出力ヘルパーと共通ユーティリティ
 - `sync.ps1`: repo ↔ 配備先の同期エンジン
-- `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL・Tauri の掃除、WSL vhdx の compact
-- `git.ps1`: 複数 git repo の一括 ff-only pull（許可ブランチ外・dirty は触らない）
+- `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL と Tauri の掃除、WSL vhdx の compact、
+  放置された git worktree の prune
+- `git.ps1`: 複数 git repo の一括 ff-only pull（許可ブランチ外の repo と dirty な repo は触らない）
 - `autoremove.ps1`: 宣言から外れた Claude プラグイン / marketplace / codex skill の掃除
   （`-ClaudeConfigDirs` に複数の config dir を渡せば、アカウントごとに走査する）
-- `winget.ps1`: winget 呼び出し・導入判定・追跡外監査・設定 (settings.json) のキー単位更新
+- `winget.ps1`: winget 呼び出し、PATH 操作、導入判定、追跡外監査、設定 (settings.json) のキー単位更新
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
-- `download.ps1` / `github.ps1`: ダウンロード・GitHub Releases 取得
+- `download.ps1` / `github.ps1`: ダウンロードと GitHub Releases の取得
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
-- `codex.ps1` / `claude.ps1`: AI 開発ツール導入・設定補助。claude CLI は必ず
-  `Get-ClaudeCommand`（実体解決）経由で呼ぶ（同名の関数・エイリアスに乗っ取られないため）。
+- `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。claude CLI は必ず
+  `Get-ClaudeCommand`（実体解決）経由で呼ぶ（同名の関数やエイリアスが先に解決されるのを避けるため）。
   config dir（= アカウント）の切り替えは `Set-ClaudeConfigDir` / `Invoke-WithClaudeConfigDir`
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
-- `keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定・TIP 登録の判定
+- `keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定、TIP 登録の判定
 - `wsl.ps1`: WSL2 とディストロの導入
-- `apidoc.ps1`: `lib/*.ps1` のヘッダ・公開関数を抽出して `booch-win help` を組み立てる
+- `apidoc.ps1`: `lib/*.ps1` のヘッダと公開関数を抽出して `booch-win help` を組み立てる
 - `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
 - `scaffold.ps1`: booch-win を使う repo の雛形を `templates/` から生成する
 
-個人・環境固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
+個人や環境に固有の「何を入れるか」は dotfiles 側の `setup-win/dotfiles-win.config.ps1` に置き、ここには置きません。
 
 ### 消費側からの取り込み（`bootstrap.ps1`）
 
-dotfiles-win のようなエントリスクリプトは、`lib/bootstrap.ps1` を dot-source して次の 2 関数で
-booch-win を取り込みます。
+dotfiles-win のようなエントリスクリプトは、`lib/bootstrap.ps1` を dot-source して booch-win を
+取り込みます。`bootstrap.ps1` を読む前に、ルートが決まっている必要があります。そのためエントリは、
+`Resolve-BoochWinRoot` と同じ候補順（`BOOCH_WIN_ROOT` → `vendor/booch-win` → `../booch-win`）で
+`lib/bootstrap.ps1` のある場所を自前で探します。見つけたルートから bootstrap と lib を読みます
+（`booch-win scaffold` が生成する `dotfiles-win.ps1` がこの形です）。
 
 ```powershell
-. (Join-Path $boochWinRoot 'lib\bootstrap.ps1')
-$root = Resolve-BoochWinRoot -DotfilesDir $DotfilesDir -SetupWinDir $SetupWinDir
+# $root: 上の候補順で lib/bootstrap.ps1 が見つかった booch-win のルート
+. (Join-Path $root 'lib\bootstrap.ps1')
 foreach ($f in Get-BoochWinLibFile -Root $root) { . $f }   # ★エントリのトップレベルで dot-source
 ```
 
-- `Resolve-BoochWinRoot`: `BOOCH_WIN_ROOT` → `vendor/booch-win` → sibling `../booch-win` → legacy の
-  順にルートを解決する（Linux 側 booch の `BOOCH_ROOT` 解決と対称）。
-- `Get-BoochWinLibFile`: dot-source すべき `lib/*.ps1`（`bootstrap.ps1` / `apidoc.ps1` を除く、
-  `common.ps1` 先頭）を返す。新しい lib を足せば消費側を変えずに自動で載る。
+- `Resolve-BoochWinRoot`: `BOOCH_WIN_ROOT` → `vendor/booch-win` → 隣の `../booch-win` →
+  旧構成（`-SetupWinDir` に lib を同梱）の順にルートを解決する。Linux 側 booch の `BOOCH_ROOT`
+  解決と対称で、エントリが自前で探すときの候補順もこれに合わせる。
+- `Get-BoochWinLibFile`: dot-source すべき `lib/*.ps1`（`bootstrap.ps1` と `apidoc.ps1` を除き、
+  `common.ps1` を先頭にした一覧）を返す。新しい lib を足せば、消費側を変えずにロード対象へ入る。
 - **ロードは必ずエントリのトップレベルで回す**（1 関数に隠蔽しない）。lib はエントリが定義する
   `$Script:` 変数を参照する設計で、関数内 dot-source では呼び出し元スコープへ伝播しないため。
   詳細は `booch-win help bootstrap`。
@@ -114,7 +119,7 @@ foreach ($f in Get-BoochWinLibFile -Root $root) { . $f }   # ★エントリの�
 ./bin/booch-win.ps1 version         # バージョン（VERSION ファイル）
 ```
 
-help がそのまま API doc になるよう、`lib/*.ps1` を足す・変える際は次を守ります。
+help がそのまま API doc になるよう、`lib/*.ps1` を足したり変えたりするときは次を守ります。
 
 - **ファイル冒頭ヘッダの最初の非空行を、自己完結した 1 行説明にする**（`lib/<name>.ps1: 概要` の
   形式。索引に出る）。
@@ -127,17 +132,17 @@ help がそのまま API doc になるよう、`lib/*.ps1` を足す・変える
 
 ## 開発・テスト
 
-- **Tier1（自動・CI）**: `tests/win.Tests.ps1`（Pester 5、winget/gh/git をモックしロジック検証）と
-  PSScriptAnalyzer・構文 parse を GitHub Actions（`windows-latest`）で実行。ローカルでは:
+- Tier1（自動、CI）: `tests/*.Tests.ps1`（Pester 5。winget / gh / git などをモックしてロジックを検証）と
+  PSScriptAnalyzer、構文 parse を GitHub Actions（`windows-latest`）で実行する。ローカルでは次のとおり:
 
   ```powershell
   Invoke-Pester -Path ./tests
   $paths = @('./win.ps1') + @(Get-ChildItem ./lib, ./bin -Filter '*.ps1' | ForEach-Object FullName); foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
   ```
 
-- **Tier2（手動・実環境）**: 実 winget・実認証・実 clone までのスモークは使い捨ての
+- Tier2（手動、実環境）: 実 winget、実認証、実 clone までのスモークは、使い捨ての
   Windows Sandbox で行う。手順は [`tests/sandbox/manual-smoke.md`](tests/sandbox/manual-smoke.md)。
-  ホスト型 CI は winget 不在・対話認証・UAC のため不可。
+  ホスト型 CI には winget が無く、対話認証と UAC も通せないので、ここは自動化できない。
 
 ## 雛形を生成する（`booch-win scaffold`）
 
@@ -150,8 +155,8 @@ README の手順に従う。
 ./bin/booch-win.ps1 scaffold dotfiles-win -Path C:\path\to\new-dotfiles
 ```
 
-生成される最小構成（`setup-win/{dotfiles-win.ps1, dotfiles-win.config.ps1, dotfiles-win,
-dotfiles-win.cmd}` ＋ `README.md` ＋ `.gitattributes`）。生成直後に booch-win を
+生成されるのは `setup-win/{dotfiles-win.ps1, dotfiles-win.config.ps1, dotfiles-win,
+dotfiles-win.cmd}`、`README.md`、`CLAUDE.md`、`.gitattributes` の最小構成。生成直後に booch-win を
 `vendor/booch-win` へ submodule 追加すれば `setup-win/dotfiles-win.ps1 help` / `doctor` が
 動く（開発中は `BOOCH_WIN_ROOT` で booch-win の場所を明示してもよい）。生成される
 `dotfiles-win.ps1` は「booch-win を解決して lib をロードし、config を読んで dispatch する」
@@ -174,17 +179,20 @@ pin する**（`vendor/booch-win` を新タグへ進めてコミット）。
 6. 消費側の pin を更新（dotfiles の `vendor/booch-win` を新タグへ）。
 
 **タグは annotated（`-a`）で打つ**。`-a` 無しの lightweight タグは `git describe`（`--tags`
-無し）から無視されるため、消費側が `git submodule status` / `git describe` で pin 先を確認すると
+無し）から無視される。そのため、消費側が `git submodule status` / `git describe` で pin 先を確認すると
 1 つ前のリリースが表示される。過去のタグは lightweight（`v0.1.0`〜`v0.5.1` / `v0.7.0`〜`v0.13.0`）と
-annotated が混在しているが、配布済みのタグを貼り直しても手元に古いタグを持つ clone は fetch で
-更新されず種別が食い違うため、打ち直さず今後のタグだけを揃える（過去版を pin して確認する側は
-`git describe --tags` を使えば混在の影響を受けない）。この前提（annotated であること・`VERSION` と
-タグ名の一致）は `v*` タグの push で `.github/workflows/release-tag.yml` が検査するので、打ち間違えれば
-赤で気付く。
+annotated が混在している。配布済みのタグを貼り直しても、手元に古いタグを持つ clone は fetch で
+更新されず種別が食い違うので、打ち直さずに今後のタグだけを揃える（過去版を pin して確認する側は
+`git describe --tags` を使えば混在の影響を受けない）。annotated であることと、`VERSION` がタグ名と
+一致することは、`v*` タグの push で `.github/workflows/release-tag.yml` が検査する。打ち間違えれば
+このワークフローが失敗する。
 
 ## 将来
 
-dotfiles-win のオーケストレーション（setup / doctor / sync / cleanup の組み立て）は段階的に dotfiles 側からこちらへ寄せる。まずは `lib/*.ps1` を公開基盤として切り出し、dotfiles 側は config とエントリに集中させる。
+dotfiles-win のオーケストレーションのうち、sync（`Invoke-BoochWinSync`）、cleanup
+（`Invoke-BoochWinCleanup`）、autoremove（`Invoke-BoochWinAutoremove`）の組み立ては、すでに
+booch-win 側にある。doctor と setup 全体（UAC 昇格、自己更新、再起動を含む）は利用側に固有の処理が多いので、
+当面は利用側のエントリに残す。doctor の汎用フレーム（`Show-ToolList` など）は `lib/doctor.ps1` にある。
 
 ## ライセンス
 
