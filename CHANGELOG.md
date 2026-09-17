@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-17
+
 ### Added
 - `Invoke-BoochWinSync` の SyncPair に `Mode = 'Deploy'` を足した。付けたペアは repo → 配備先の
   片方向になり、差分があっても r/e/s を聞かずに repo 側で上書きする。配備先をローカルで編集しない
@@ -621,7 +623,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/kan/booch-win/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kan/booch-win/compare/v0.23.3...v0.24.0
 [0.23.3]: https://github.com/kan/booch-win/compare/v0.23.2...v0.23.3
 [0.23.2]: https://github.com/kan/booch-win/compare/v0.23.1...v0.23.2
