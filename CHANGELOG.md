@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Added
+- `Invoke-BoochWinSync` の SyncPair に `Mode = 'Deploy'` を足した。付けたペアは repo → 配備先の
+  片方向になり、差分があっても r/e/s を聞かずに repo 側で上書きする。配備先をローカルで編集しない
+  物（配布するスキルなど）向け。`Mode` を省略したペアの挙動は変わらない
+
 ## [0.24.0] - 2026-09-17
 
 ### Changed

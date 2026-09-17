@@ -97,6 +97,19 @@ Describe 'Invoke-BoochWinSync' {
         Should -Invoke Deploy-Pair -Times 0
     }
 
+    It "Mode = 'Deploy' なら差分があっても確認せず deploy する" {
+        $dest = Join-Path $TestDrive ('m_' + [guid]::NewGuid().ToString('N') + '.txt')
+        Set-Content -LiteralPath $dest -Value 'env' -Encoding UTF8
+        $pair = New-Pair -Dot $script:Dot -Repo 'm.txt' -Dest $dest -RepoContent 'repo'
+        $pair.Mode = 'Deploy'
+        Mock Test-PairInSync { $false }
+        Mock Read-Host { 'e' }
+        Invoke-BoochWinSync -Pairs @($pair) -DotfilesDir $script:Dot
+        Should -Invoke Read-Host -Times 0
+        Should -Invoke Deploy-Pair -Times 1
+        Should -Invoke Import-Pair -Times 0
+    }
+
     It '差分 + [s] で何もしない' {
         $dest = Join-Path $TestDrive ('s_' + [guid]::NewGuid().ToString('N') + '.txt')
         Set-Content -LiteralPath $dest -Value 'env' -Encoding UTF8

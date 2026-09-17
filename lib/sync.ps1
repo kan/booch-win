@@ -191,6 +191,10 @@ function Import-Pair {
 # 反映する。何を同期するか ($Pairs) と repo の場所 ($DotfilesDir) は消費側が
 # 渡し、判定・展開・書き込みは上のエンジン関数に委ねる。表示・対話の挙動は
 # 従来 dotfiles-win.ps1 の Invoke-Sync と同一。
+#
+# ペアに Mode = 'Deploy' を付けると repo → 環境の片方向になり、差分があっても
+# 聞かずに repo 側で上書きする。配備先をローカルで編集しない物 (配布するスキル等)
+# 向け。Mode を省略したペアは従来どおり対話で選ぶ。
 # ------------------------------------------------------------
 function Invoke-BoochWinSync {
     param(
@@ -224,6 +228,12 @@ function Invoke-BoochWinSync {
 
         if (Test-PairInSync $pair $repoFile $destFile) {
             Write-Ok "${label}: up to date"
+            continue
+        }
+
+        if ($pair.Mode -eq 'Deploy') {
+            Deploy-Pair $pair $repoFile $destFile
+            Write-Ok "${label}: deployed from repo (overwritten)"
             continue
         }
 

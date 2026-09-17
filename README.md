@@ -61,7 +61,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 `lib/*.ps1` は dotfiles-win から dot-source される汎用処理です。
 
 - `common.ps1`: 出力ヘルパーと共通ユーティリティ
-- `sync.ps1`: repo ↔ 配備先の同期エンジン
+- `sync.ps1`: repo ↔ 配備先の同期エンジン（`Mode = 'Deploy'` を付けたペアは片方向）
 - `cleanup.ps1`: 一時ファイル / ツールキャッシュ / WSL と Tauri の掃除、WSL vhdx の compact、
   放置された git worktree の prune
 - `git.ps1`: 複数 git repo の一括 ff-only pull（許可ブランチ外の repo と dirty な repo は触らない）
