@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-17
+
 ### Changed
 - `Install-Codex` を、公式インストーラー（`https://chatgpt.com/codex/install.ps1`）で導入する形に
   変えた。以前は GitHub Releases の `codex-<arch>-pc-windows-msvc.exe` 単体を `~\.local\bin\codex.exe` へ
@@ -614,7 +616,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.23.3...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/kan/booch-win/compare/v0.23.3...v0.24.0
 [0.23.3]: https://github.com/kan/booch-win/compare/v0.23.2...v0.23.3
 [0.23.2]: https://github.com/kan/booch-win/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/kan/booch-win/compare/v0.23.0...v0.23.1
