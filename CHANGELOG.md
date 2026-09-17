@@ -6,6 +6,32 @@
 
 ## [Unreleased]
 
+### Changed
+- `Install-Codex` を、公式インストーラー（`https://chatgpt.com/codex/install.ps1`）で導入する形に
+  変えた。以前は GitHub Releases の `codex-<arch>-pc-windows-msvc.exe` 単体を `~\.local\bin\codex.exe` へ
+  置いていたが、この方式では Codex CLI が要する付随の実行ファイルが揃わない。対象は
+  `codex-code-mode-host.exe` / `rg.exe` / `codex-command-runner.exe` / `codex-windows-sandbox-setup.exe` で、
+  これらが無いと正常に動かなくなった。
+  - インストーラーは子プロセスで `-Release` と `CODEX_NON_INTERACTIVE=1` を付けて実行し、終了コードが
+    非 0 なら throw する。パッケージの SHA256 検証はインストーラーが行う
+  - **破壊的変更:** 引数を `-Repo` から `-Version`（省略時 latest、`rust-v` / `v` 接頭辞可）に変えた。
+    インストーラーの latest は releases.openai.com で決まり、`Get-CodexLatestVersion`（GitHub）と
+    ずれることがあるので、版を比べてから入れる利用側はその版を渡す
+  - 導入後、`Update-SessionPath` で現セッションの PATH をレジストリから組み直す。インストーラーが
+    User PATH に足した bin dir（`Get-CodexBinDir`。`CODEX_INSTALL_DIR`、無ければ
+    `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`）を、同じセッションの後続処理（版の確認、doctor）から見えるようにするため
+  - 以前の版が置いた `~\.local\bin\codex.exe` を、導入の成功後に削除する（`Remove-LegacyCodexBinary`）。
+    PATH の順で先に当たり続けるため。消すのは通常ファイルで、`--version` が `codex-cli` を名乗るときだけ。
+    `Install-Codex` は版が最新と違うときにしか呼ばれないので、利用側が導入済みで `Install-Codex` を
+    呼ばない回に使う `Clear-LegacyCodexBinary`（削除を試み、失敗は警告だけにする）を足した
+  - インストーラーは古い版を消さないので、導入後に current と直前の版以外を
+    `%CODEX_HOME%\packages\standalone\releases\` から削除する（`Remove-CodexOldRelease`）。先に名前を
+    変えてから消すので、使用中の版は中身に触れずに残る
+- `Get-CodexInstalledVersion` は、PATH 上の `codex` ではなく見える bin dir の `codex.exe` の版を返す
+  ようにした。旧単一バイナリだけが残る環境を未導入と判定し、移行のための導入を走らせるため。版の
+  取り出しは `Get-VersionNumber` に寄せた（出力の末尾に注記が付いても版を取れる）。
+- タグから版への変換を `ConvertTo-CodexVersion` にまとめた（`Install-Codex` と `Get-CodexLatestVersion` が使う）。
+
 ## [0.23.3] - 2026-09-15
 
 ### Fixed

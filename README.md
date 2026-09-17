@@ -71,7 +71,14 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロードと GitHub Releases の取得
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
-- `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。claude CLI は必ず
+- `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。Codex CLI は公式インストーラー
+  （`install.ps1`）を子プロセスで実行して入れる（`Install-Codex [-Version <x.y.z>]`）。codex.exe 単体では
+  付随する実行ファイルが揃わず動かないため。見える bin dir はインストーラーの既定
+  （`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`。`CODEX_INSTALL_DIR` で変更可）で、以前の版が置いた
+  `~\.local\bin\codex.exe` は導入の成功後に削除する（再試行用に `Clear-LegacyCodexBinary` を単独でも呼べる）。
+  `-Version` を省略するとインストーラーの latest になり、GitHub の最新タグとずれることがあるので、
+  `Get-CodexLatestVersion` と比べてから入れるなら、その版を渡す。
+  更新も同じインストーラーで行い、current と直前の版より古い版は削除する。claude CLI は必ず
   `Get-ClaudeCommand`（実体解決）経由で呼ぶ（同名の関数やエイリアスが先に解決されるのを避けるため）。
   config dir（= アカウント）の切り替えは `Set-ClaudeConfigDir` / `Invoke-WithClaudeConfigDir`
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助

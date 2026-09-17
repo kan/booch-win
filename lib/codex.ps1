@@ -1,58 +1,212 @@
 ﻿#Requires -Version 5.1
 #
-# lib/codex.ps1: 機構 — Codex CLI (GitHub Releases バイナリ) の導入
+# lib/codex.ps1: 機構 — Codex CLI (公式インストーラー) の導入と config.toml の更新
 #
-# dotfiles-win.ps1 から dot-source される。どの repo から入れるか ($CodexRepo)
-# は config。GitHub 最新タグ取得は lib/github.ps1。
+# dotfiles-win.ps1 から dot-source される。最新版の確認に使う repo ($CodexRepo) は
+# config。GitHub 最新タグ取得は lib/github.ps1。
+#
+# 導入は公式インストーラー (install.ps1) に任せる。Codex CLI は codex.exe 単体では
+# 動かず、同じリリースの付随物 (codex-code-mode-host.exe / rg.exe /
+# codex-command-runner.exe / codex-windows-sandbox-setup.exe) を決まった配置で要する。
+# インストーラーはそれらをパッケージごと %CODEX_HOME%\packages\standalone へ展開し
+# (SHA256 検証つき)、見える bin dir (既定 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin) を
+# junction で張り、User PATH に足す。
+# 依存: Invoke-Download / Get-EffectiveTimeout (lib/download.ps1)、Update-SessionPath
+# (lib/winget.ps1)、Get-VersionNumber (lib/doctor.ps1)。entry が全 lib をまとめて dot-source する。
+#
+# テスト用の継ぎ目 (seam):
+#   Save-CodexInstaller      install.ps1 の取得 (ネットワーク)
+#   Invoke-CodexInstaller    install.ps1 を子プロセスで実行し終了コードを返す
+#   Get-CodexVersionOutput   指定した codex.exe の --version 出力
 
-# Codex CLI バイナリを GitHub releases の最新から ~/.local/bin へ配置する。
-function Install-Codex {
-    param([Parameter(Mandatory)][string]$Repo)
-    $archMap = @{
-        'AMD64' = 'x86_64'
-        'ARM64' = 'aarch64'
+# GitHub のタグ (rust-vX.Y.Z / vX.Y.Z) を、codex --version とインストーラーの -Release が使う素の版にする。
+function ConvertTo-CodexVersion {
+    param([string]$Tag)
+    return ($Tag -replace '^rust-v', '' -replace '^v', '')
+}
+
+# インストーラーが codex.exe を置く見える bin dir。install.ps1 と同じく
+# CODEX_INSTALL_DIR を優先し、無ければ既定の場所を返す。
+function Get-CodexBinDir {
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_INSTALL_DIR)) {
+        return $env:CODEX_INSTALL_DIR
     }
-    $arch = $archMap[$env:PROCESSOR_ARCHITECTURE]
-    if (-not $arch) {
-        throw "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE"
+    return (Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\Codex\bin')
+}
+
+# インストーラーがパッケージを置くディレクトリ (releases\ と current を持つ)。
+function Get-CodexStandaloneDir {
+    $codexHome = if ([string]::IsNullOrWhiteSpace($env:CODEX_HOME)) { Join-Path $env:USERPROFILE '.codex' } else { $env:CODEX_HOME }
+    return (Join-Path $codexHome 'packages\standalone')
+}
+
+# current (junction) が指す版ディレクトリの名前 (<版>-<target>)。current が無ければ空。
+function Get-CodexCurrentReleaseName {
+    $current = Join-Path (Get-CodexStandaloneDir) 'current'
+    if (-not (Test-Path -LiteralPath $current)) { return '' }
+    $target = @((Get-Item -LiteralPath $current -Force).Target) | Select-Object -First 1
+    if (-not $target) { return '' }
+    return (Split-Path -Leaf ([string]$target).TrimEnd('\', '/'))
+}
+
+# current と $Keep (直前の版の名前) 以外の版ディレクトリを削除する。インストーラーは古い版を
+# 消さない (1 版あたり数百 MB)。直前の版を残すのは、更新前から動いている codex のセッションが
+# 自分の版の付随ファイルを使い続けるため。比較は名前で行う (パスの表記揺れで current を消さない)。
+# 作業中の .staging.* はインストーラー自身が掃除するので触らない。
+# 使用中の版は残す。Remove-Item -Recurse は消せるファイルから消していき、実行中の exe で止まるので、
+# そのまま消すと付随ファイルだけが消えた壊れた版が残る。そこで 2 段に分ける。(1) 古い版の
+# ディレクトリ名を .booch-old.* に変える (実行中の exe を含むディレクトリは名前を変えられないので、
+# 使用中の版はここで残る)。(2) .booch-old.* を消す (前回消しきれなかった分もここで消し直す)。
+function Remove-CodexOldRelease {
+    param([string]$Keep = '')
+    $current = Get-CodexCurrentReleaseName
+    if (-not $current) { return }
+    $releases = Join-Path (Get-CodexStandaloneDir) 'releases'
+    if (-not (Test-Path -LiteralPath $releases -PathType Container)) { return }
+    $trashPrefix = '.booch-old.'
+    $old = Get-ChildItem -LiteralPath $releases -Directory -Force |
+        Where-Object { -not $_.Name.StartsWith('.') -and $_.Name -ne $current -and $_.Name -ne $Keep }
+    foreach ($dir in $old) {
+        try {
+            Rename-Item -LiteralPath $dir.FullName -NewName ($trashPrefix + $dir.Name) -ErrorAction Stop
+        } catch {
+            Write-Warn "codex: 使用中のため古い版を残す ($($dir.FullName))"
+        }
     }
-    $binName = "codex-${arch}-pc-windows-msvc.exe"
-    $destDir = Join-Path $HOME '.local\bin'
-    $dest    = Join-Path $destDir 'codex.exe'
-    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    # 最終配置先へ直接ダウンロードすると、通信断・タイムアウト時に既存の正常な
-    # codex.exe を部分書き込みで破損させ起動不能にしうる。一時ファイルへ落とし、
-    # 成功後に Move-Item -Force で原子的に入れ替える (失敗時は旧バイナリを残す)。
-    $tmp = "${dest}.download"
-    try {
-        Invoke-Download `
-            -Uri "https://github.com/$Repo/releases/latest/download/${binName}" `
-            -OutFile $tmp `
-            -TimeoutSec (Get-EffectiveTimeout $Script:JobTimeoutSec)
-        Move-Item -Force -Path $tmp -Destination $dest
-    } finally {
-        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    foreach ($dir in Get-ChildItem -LiteralPath $releases -Directory -Force -Filter "$trashPrefix*") {
+        try {
+            Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+        } catch {
+            Write-Warn "codex: 古い版を削除できない ($($dir.FullName)): $_"
+        }
     }
 }
 
-# codex の現在バージョンと、GitHub releases の最新タグを取得する。
-# 両者が一致するなら 30MB の再ダウンロードをスキップできる。
-function Get-CodexInstalledVersion {
-    if (-not (Test-Cmd 'codex')) { return '' }
+# 以前の booch-win (単一バイナリ方式) が codex.exe を置いていた場所。
+function Get-LegacyCodexPath {
+    return (Join-Path $HOME '.local\bin\codex.exe')
+}
+
+function Save-CodexInstaller {
+    param([Parameter(Mandatory)][string]$OutFile)
+    Invoke-Download -Uri 'https://chatgpt.com/codex/install.ps1' -OutFile $OutFile `
+        -TimeoutSec (Get-EffectiveTimeout $Script:JobTimeoutSec)
+}
+
+# install.ps1 を子プロセスで実行し、終了コードを返す。
+# 子プロセスにするのは、install.ps1 が StrictMode / $ErrorActionPreference を書き換え、
+# 失敗時に exit するため (dot-source や & で呼ぶと呼び出し側のセッションを巻き込む)。
+# CODEX_NON_INTERACTIVE=1 で「今すぐ起動するか」等の確認を抑止する (無人実行で
+# Read-Host に止まらないように)。環境変数は子へ継承させた後に元へ戻す。
+function Invoke-CodexInstaller {
+    param(
+        [Parameter(Mandatory)][string]$ScriptPath,
+        [Parameter(Mandatory)][string]$Release
+    )
+    # 今動いている PowerShell と同じ実行ファイルを使う。ISE などコンソール以外のホストは
+    # -File を受け付けないので、そのときは Windows PowerShell で起動する。
+    $shell = (Get-Process -Id $PID).Path
+    if ([IO.Path]::GetFileNameWithoutExtension($shell) -notin @('pwsh', 'powershell')) {
+        $shell = 'powershell.exe'
+    }
+    $prev = $env:CODEX_NON_INTERACTIVE
+    $env:CODEX_NON_INTERACTIVE = '1'
     try {
-        $raw = Invoke-Quiet { & codex --version 2>$null | Select-Object -First 1 }
-        if ($raw) {
-            return (($raw -as [string]) -split '\s+' | Where-Object { $_ } | Select-Object -Last 1)
-        }
-    } catch {}
+        # 子の出力は画面へ流す。パイプラインに残すと戻り値 (終了コード) に混ざる。
+        & $shell -NoProfile -ExecutionPolicy Bypass -File $ScriptPath -Release $Release | Out-Host
+        return $LASTEXITCODE
+    } finally {
+        $env:CODEX_NON_INTERACTIVE = $prev
+    }
+}
+
+function Get-CodexVersionOutput {
+    param([Parameter(Mandatory)][string]$Path)
+    # scriptblock から参照するためローカルへ移す (param を直接使うと解析器が未使用と誤検出する)。
+    $exe = $Path
+    try {
+        $raw = Invoke-Quiet { & $exe --version 2>$null | Select-Object -First 1 }
+    } catch {
+        # 起動できない (壊れたバイナリ等) ときは版が取れないものとして扱う。
+        return ''
+    }
+    if ($raw) { return ($raw -as [string]) }
     return ''
+}
+
+# 以前の booch-win が置いた単一バイナリ (~\.local\bin\codex.exe) を削除する。
+# 残すと PATH の順によってはこちらが先に当たり、動かない単体の codex が起動し続ける。
+# 消すのは通常ファイルで、--version が codex-cli を名乗るものだけ (別物を巻き込まない)。
+# 削除したら $true を返す。
+function Remove-LegacyCodexBinary {
+    param([string]$Path = (Get-LegacyCodexPath))
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+    $binExe = Join-Path (Get-CodexBinDir) 'codex.exe'
+    if ($item.FullName.Equals([IO.Path]::GetFullPath($binExe), [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    if ((Get-CodexVersionOutput -Path $Path) -notmatch '^codex-cli\s') { return $false }
+    Remove-Item -LiteralPath $Path -Force
+    return $true
+}
+
+# 旧単一バイナリの削除を試み、結果を表示する。失敗 (実行中でロックされている等) は警告だけにする。
+# Install-Codex もこれを呼ぶが、Install-Codex は版が最新と違うときにしか呼ばれないので、それだけでは
+# 削除に一度失敗すると再試行されない。利用側は導入済みで Install-Codex を呼ばない回にこれを呼ぶ。
+function Clear-LegacyCodexBinary {
+    try {
+        if (Remove-LegacyCodexBinary) {
+            Write-Info "codex: 旧配置の単一バイナリを削除 ($(Get-LegacyCodexPath))"
+        }
+    } catch {
+        Write-Warn "codex: 旧配置の単一バイナリを削除できない ($(Get-LegacyCodexPath)): $_"
+    }
+}
+
+# Codex CLI を公式インストーラーで導入 / 更新する。$Version は x.y.z (rust-v / v 接頭辞可)
+# か latest。インストーラーの latest は releases.openai.com で決まり、Get-CodexLatestVersion
+# (GitHub) とずれることがあるので、版を比べてから入れる利用側はその版を渡す。
+# 導入後は現セッションの PATH をレジストリから組み直し (インストーラーが User PATH に足した
+# bin dir を、同じセッションの版の確認や doctor から見えるようにする)、直前の版より古い版と
+# 旧単一バイナリを消す。
+function Install-Codex {
+    param([string]$Version = 'latest')
+    $release = if ([string]::IsNullOrWhiteSpace($Version)) { 'latest' } else { ConvertTo-CodexVersion $Version }
+    $previous = Get-CodexCurrentReleaseName
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ('codex-installer-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    try {
+        $installer = Join-Path $tmpDir 'install.ps1'
+        Save-CodexInstaller -OutFile $installer
+        $code = Invoke-CodexInstaller -ScriptPath $installer -Release $release
+        if ($code -ne 0) {
+            throw "Codex installer failed (exit $code)"
+        }
+    } finally {
+        Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Update-SessionPath
+    Remove-CodexOldRelease -Keep $previous
+    # 旧バイナリの削除は導入の成否に含めない (実行中でロックされていると消せないが、導入自体は済んでいる)。
+    Clear-LegacyCodexBinary
+}
+
+# インストーラーが導入した codex の版 (未導入なら空)。PATH 上の codex ではなく見える
+# bin dir の codex.exe を見る。旧単一バイナリだけが残っている環境を「未導入」と判定し、
+# 再導入 (= 移行) を走らせるため。
+function Get-CodexInstalledVersion {
+    $exe = Join-Path (Get-CodexBinDir) 'codex.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return '' }
+    return (Get-VersionNumber (Get-CodexVersionOutput -Path $exe))
 }
 
 function Get-CodexLatestVersion {
     param([Parameter(Mandatory)][string]$Repo)
     $tag = Get-GitHubLatestReleaseTag -Repo $Repo
     if ($tag) {
-        return ($tag -replace '^rust-v', '' -replace '^v', '')
+        return (ConvertTo-CodexVersion $tag)
     }
     return ''
 }
