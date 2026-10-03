@@ -302,10 +302,16 @@ function Add-ClaudeMarketplace {
 }
 
 # `claude plugin marketplace list` の登録済み marketplace 名を配列で返す (claude 不在なら空)。
-# 出力書式 (`❯ <name>`) の解析は Get-ClaudePluginList / Show-ClaudePlugins と同じ層に置く。
+# `--json` は利用者が add したものだけを返す。表示用の出力は組込み (`Source: Built in`) や
+# `From claude.ai:` の未登録分まで `❯` 行で並べるので、それを数えると autoremove が毎回
+# リスト外として候補に出す。`--json` を持たない古い CLI だけ表示用の出力から拾う。
 function Get-ClaudeMarketplaceName {
     $cmd = Get-ClaudeCommand
     if (-not $cmd) { return @() }
+    $json = Invoke-Quiet { & $cmd plugin marketplace list --json 2>$null | Out-String }
+    if ($LASTEXITCODE -eq 0 -and $json) {
+        return @(($json | ConvertFrom-Json) | ForEach-Object { $_.name })
+    }
     $out = Invoke-Quiet { & $cmd plugin marketplace list 2>&1 | Out-String }
     $names = New-Object System.Collections.Generic.List[string]
     foreach ($line in ($out -split "`r?`n")) {

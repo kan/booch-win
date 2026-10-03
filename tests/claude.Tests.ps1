@@ -234,9 +234,21 @@ Describe 'Install-ClaudeCode' {
 }
 
 Describe 'Get-ClaudeMarketplaceName' {
-    It 'marketplace list の ❯ 行から名前を拾う' {
+    It '--json の name を返す' {
         Mock Get-ClaudeCommand { 'claude' }
-        Mock Invoke-Quiet { @"
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; @"
+[
+  { "name": "claude-plugins-official", "source": "github", "repo": "anthropics/claude-plugins-official" },
+  { "name": "openai-codex", "source": "github", "repo": "openai/codex-plugin-cc" }
+]
+"@ } -ParameterFilter { $Block.ToString() -match '--json' }
+        Get-ClaudeMarketplaceName | Should -Be @('claude-plugins-official', 'openai-codex')
+    }
+
+    It '--json が失敗したら (古い CLI) 表示用の出力の ❯ 行から拾う' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; '' } -ParameterFilter { $Block.ToString() -match '--json' }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; @"
 Configured marketplaces:
 
   ❯ claude-plugins-official
@@ -244,7 +256,7 @@ Configured marketplaces:
 
   ❯ openai-codex
     Source: GitHub (openai/codex-plugin-cc)
-"@ }
+"@ } -ParameterFilter { $Block.ToString() -notmatch '--json' }
         Get-ClaudeMarketplaceName | Should -Be @('claude-plugins-official', 'openai-codex')
     }
 

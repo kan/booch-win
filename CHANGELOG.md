@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- `Get-ClaudeMarketplaceName` が、登録済みでない 2 種類の項目も返していた。1 つは Claude Code に組込みの
+  marketplace（`anthropic-plugin-directory` など。一覧の `Source: Built in`）で、もう 1 つは
+  `From claude.ai:` 節の未登録の項目（名前として `(no` を拾っていた）。どちらも autoremove が毎回リスト外
+  として候補に出していた。
+  `claude plugin marketplace list --json` の `name` を返すようにした。CLI が `--json` を持たないときは、
+  これまでどおり表示用の出力から拾う
+
 ## [0.25.0] - 2026-09-17
 
 ### Added
