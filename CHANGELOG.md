@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-10-03
+
 ### Fixed
 - `Get-ClaudeMarketplaceName` が、登録済みでない 2 種類の項目も返していた。1 つは Claude Code に組込みの
   marketplace（`anthropic-plugin-directory` など。一覧の `Source: Built in`）で、もう 1 つは
@@ -631,7 +633,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/kan/booch-win/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kan/booch-win/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kan/booch-win/compare/v0.23.3...v0.24.0
 [0.23.3]: https://github.com/kan/booch-win/compare/v0.23.2...v0.23.3
