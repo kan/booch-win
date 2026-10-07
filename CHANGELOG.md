@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-10-07
+
 ### Fixed
 - セッション限定で読み込まれた Claude プラグインを、導入済みとして数えていた。`--plugin-dir` /
   `--plugin-url` や環境変数 `CLAUDE_CODE_PLUGIN_DIRS` で読み込まれたプラグインは、
@@ -642,7 +644,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.2...HEAD
+[0.25.2]: https://github.com/kan/booch-win/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/kan/booch-win/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kan/booch-win/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kan/booch-win/compare/v0.23.3...v0.24.0
