@@ -6,7 +6,7 @@ BeforeAll {
     $script:Root = Split-Path $PSScriptRoot -Parent
     $lib = Join-Path $script:Root 'lib'
     . (Join-Path $lib 'common.ps1')
-    . (Join-Path $lib 'claude.ps1')      # Get-ClaudePluginList (mock 対象)
+    . (Join-Path $lib 'claude.ps1')      # Get-ClaudePluginName / Get-ClaudeMarketplaceName (mock 対象)
     . (Join-Path $lib 'autoremove.ps1')
 }
 
@@ -201,17 +201,12 @@ Describe 'Invoke-BoochWinAutoremoveOne' {
     }
 }
 
+# Get-BoochWinRegisteredMarketplace と同じ理由で、委譲先を Mock せずに綴りを確かめる。
 Describe 'Get-BoochWinInstalledPlugin' {
-    It '❯ 行の name@marketplace から name を拾う' {
-        Mock Test-ClaudeInstalled { $true }
-        Mock Get-ClaudePluginList { "❯ codex@openai-codex`n  Version: 1.0`n❯ pike-todo@pike`n  Version: 2.0" }
-        $names = @(Get-BoochWinInstalledPlugin)
-        $names | Should -Be @('codex', 'pike-todo')
-    }
-
-    It 'claude 不在なら空を返す' {
-        Mock Test-ClaudeInstalled { $false }
-        @(Get-BoochWinInstalledPlugin).Count | Should -Be 0
+    It 'Get-ClaudePluginName へ委譲する' {
+        Mock Get-ClaudePluginName { @('codex', 'pike-todo') }
+        Get-BoochWinInstalledPlugin | Should -Be @('codex', 'pike-todo')
+        Should -Invoke Get-ClaudePluginName -Times 1
     }
 }
 

@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### Fixed
+- セッション限定で読み込まれた Claude プラグインを、導入済みとして数えていた。`--plugin-dir` /
+  `--plugin-url` や環境変数 `CLAUDE_CODE_PLUGIN_DIRS` で読み込まれたプラグインは、
+  `claude plugin list` の `Session-only plugins` 節に並ぶ。端末がその環境変数を設定していると、
+  autoremove が毎回リスト外プラグインとして候補に出し、`Show-ClaudePlugins` は `loaded` を
+  WARN として表示していた。
+  `Get-BoochWinInstalledPlugin` は `claude plugin list --json` の `scope` で判定するようにし
+  （実体は新設の `Get-ClaudePluginName`）、`Get-ClaudePluginList` はその節を除いた出力を返す
+
 ## [0.25.1] - 2026-10-03
 
 ### Fixed

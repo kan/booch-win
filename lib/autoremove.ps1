@@ -30,17 +30,10 @@
 # 判定できる codexskill だけ続行する。
 
 # `claude plugin list` の導入済みプラグイン ShortName を配列で返す (claude 不在なら空)。
-# 出力の各ブロック先頭 `❯ name@marketplace` から name を拾う (Show-ClaudePlugins と同じ規約)。
+# 実体は lib/claude.ps1 の Get-ClaudePluginName (CLI 出力書式の解析は claude 側の関心。
+# セッション限定のプラグインを除く判定もそちらが持つ)。この名前は autoremove の既存利用者のために残す。
 function Get-BoochWinInstalledPlugin {
-    if (-not (Test-ClaudeInstalled)) { return @() }
-    $out = Get-ClaudePluginList
-    $names = New-Object System.Collections.Generic.List[string]
-    foreach ($line in ($out -split "`r?`n")) {
-        if ($line -match '^\s*❯\s+(\S+)') {
-            $names.Add(($Matches[1] -split '@')[0])
-        }
-    }
-    return $names.ToArray()
+    return Get-ClaudePluginName
 }
 
 # `claude plugin marketplace list` の登録済み marketplace 名を配列で返す (claude 不在なら空)。

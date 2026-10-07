@@ -135,12 +135,54 @@ function Install-ClaudeCode {
     }
 }
 
-# claude plugin list の出力を 1 つの文字列で返す。判定の使い回し用 (複数
+# claude plugin list の出力から、セッション限定プラグインの節を取り除いて返す。
+# `--plugin-dir` / `--plugin-url` や環境変数 CLAUDE_CODE_PLUGIN_DIRS で読み込まれたプラグインは、
+# 導入済みの一覧の後ろに `Session-only plugins (...)` という節で並ぶ (状態は `loaded`)。
+# 端末がその環境変数を設定していると (エディタ統合など)、どの config dir の一覧にも現れる。
+# config dir に導入されたものではないので、導入済みとして数えない。
+# 節は字下げの無い見出し行で始まり、次の見出し行か末尾で終わる。見出しの文言が変わったら
+# 何も削らない (従来の挙動に戻るだけで、導入済みの節を誤って落とすことは無い)。
+function Remove-ClaudeSessionPluginSection {
+    param([string]$Output)
+    $kept = New-Object System.Collections.Generic.List[string]
+    $skip = $false
+    foreach ($line in ($Output -split "`r?`n")) {
+        if ($line -match '^\S') { $skip = ($line -match '^Session-only plugins') }
+        if (-not $skip) { $kept.Add($line) }
+    }
+    return ($kept -join "`n")
+}
+
+# claude plugin list の出力 (導入済みの分) を 1 つの文字列で返す。判定の使い回し用 (複数
 # プラグインを同一スナップショットで判定でき、list 呼び出しを 1 回に抑える)。
+# セッション限定プラグインの節は含めない (Remove-ClaudeSessionPluginSection)。
 function Get-ClaudePluginList {
     $cmd = Get-ClaudeCommand
     if (-not $cmd) { return '' }
-    return (Invoke-Quiet { & $cmd plugin list 2>&1 | Out-String })
+    $out = Invoke-Quiet { & $cmd plugin list 2>&1 | Out-String }
+    if (-not $out) { return '' }
+    return (Remove-ClaudeSessionPluginSection $out)
+}
+
+# `claude plugin list` の導入済みプラグイン名 (plugin@marketplace の plugin 部分) を配列で返す
+# (claude 不在なら空)。`--json` の scope で判定し、セッション限定 (`session`) のものは除く。
+# 削除候補の算出に使うので、表示用の出力の書式ではなく構造化された出力を優先する
+# (Get-ClaudeMarketplaceName と同じ方針)。`--json` を持たない古い CLI だけ表示用の出力から拾う。
+function Get-ClaudePluginName {
+    $cmd = Get-ClaudeCommand
+    if (-not $cmd) { return @() }
+    $json = Invoke-Quiet { & $cmd plugin list --json 2>$null | Out-String }
+    if ($LASTEXITCODE -eq 0 -and $json) {
+        return @(($json | ConvertFrom-Json) | Where-Object { $_.scope -ne 'session' } |
+            ForEach-Object { ($_.id -split '@')[0] })
+    }
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ((Get-ClaudePluginList) -split "`r?`n")) {
+        if ($line -match '^\s*❯\s+(\S+)') {
+            $names.Add(($Matches[1] -split '@')[0])
+        }
+    }
+    return $names.ToArray()
 }
 
 # doctor 向け: 導入済み claude プラグインを claude 行の直下にネストして版付きで列挙する

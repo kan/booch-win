@@ -122,6 +122,123 @@ Describe 'Show-ClaudePlugins' {
     }
 }
 
+Describe 'Remove-ClaudeSessionPluginSection' {
+    BeforeAll {
+        $script:Installed = @"
+Installed plugins:
+
+  ❯ codex@openai-codex
+    Version: 1.0.6
+    Scope: user
+    Status: ✔ enabled
+"@
+        $script:Session = @"
+Session-only plugins (--plugin-dir / --plugin-url):
+
+  ❯ editor-mod@inline
+    Version: 0.1.0
+    Path: C:\mods\editor-mod
+    Status: ✔ loaded
+"@
+    }
+
+    It '導入済みの節を残し、セッション限定の節を落とす' {
+        $out = Remove-ClaudeSessionPluginSection ($script:Installed + "`n`n" + $script:Session)
+        $out | Should -Match 'codex@openai-codex'
+        $out | Should -Not -Match 'editor-mod'
+        $out | Should -Not -Match 'loaded'
+    }
+
+    It '導入済みが 0 件でセッション限定の節だけのときは何も残さない' {
+        (Remove-ClaudeSessionPluginSection $script:Session).Trim() | Should -BeNullOrEmpty
+    }
+
+    It 'セッション限定の節の後ろに別の節が続けば、そちらは残す' {
+        $out = Remove-ClaudeSessionPluginSection ($script:Session + "`n`n" + $script:Installed)
+        $out | Should -Match 'codex@openai-codex'
+        $out | Should -Not -Match 'editor-mod'
+    }
+
+    It 'CRLF の出力でも同じ結果になる' {
+        $crlf = ($script:Installed + "`n`n" + $script:Session) -replace "`r?`n", "`r`n"
+        Remove-ClaudeSessionPluginSection $crlf | Should -Not -Match 'editor-mod'
+    }
+
+    It 'セッション限定の節が無ければ行を削らない' {
+        $out = Remove-ClaudeSessionPluginSection $script:Installed
+        ($out -split "`n").Count | Should -Be ($script:Installed -split "`r?`n").Count
+    }
+}
+
+Describe 'Get-ClaudePluginList' {
+    It 'セッション限定の節を除いて返す' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { @"
+Installed plugins:
+
+  ❯ codex@openai-codex
+    Version: 1.0.6
+    Status: ✔ enabled
+
+Session-only plugins (--plugin-dir / --plugin-url):
+
+  ❯ editor-mod@inline
+    Version: 0.1.0
+    Status: ✔ loaded
+"@ }
+        $out = Get-ClaudePluginList
+        $out | Should -Match 'codex@openai-codex'
+        $out | Should -Not -Match 'editor-mod'
+    }
+
+    It '取得失敗 (空出力) は空文字' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { '' }
+        Get-ClaudePluginList | Should -Be ''
+    }
+
+    It 'claude 不在なら空文字' {
+        Mock Get-ClaudeCommand { $null }
+        Get-ClaudePluginList | Should -Be ''
+    }
+}
+
+Describe 'Get-ClaudePluginName' {
+    It '--json の id から名前を返し、scope が session のものは除く' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; @"
+[
+  { "id": "codex@openai-codex", "version": "1.0.6", "scope": "user", "enabled": true },
+  { "id": "gopls-lsp@claude-plugins-official", "version": "1.0.0", "scope": "project", "enabled": true },
+  { "id": "editor-mod@inline", "version": "0.1.0", "scope": "session", "enabled": true }
+]
+"@ } -ParameterFilter { $Block.ToString() -match '--json' }
+        Get-ClaudePluginName | Should -Be @('codex', 'gopls-lsp')
+    }
+
+    It '--json が失敗したら (古い CLI) 表示用の出力の ❯ 行から拾う' {
+        Mock Get-ClaudeCommand { 'claude' }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 1; '' } -ParameterFilter { $Block.ToString() -match '--json' }
+        Mock Invoke-Quiet { $global:LASTEXITCODE = 0; @"
+Installed plugins:
+
+  ❯ codex@openai-codex
+    Version: 1.0.6
+
+Session-only plugins (--plugin-dir / --plugin-url):
+
+  ❯ editor-mod@inline
+    Version: 0.1.0
+"@ } -ParameterFilter { $Block.ToString() -notmatch '--json' }
+        Get-ClaudePluginName | Should -Be @('codex')
+    }
+
+    It 'claude 不在なら空を返す' {
+        Mock Get-ClaudeCommand { $null }
+        Get-ClaudePluginName | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Get-ClaudeCommand / Test-ClaudeInstalled' {
     It '実体を引けなければ未導入と判定する' {
         # 対話プロファイルが claude をラップしている環境では、ベア名解決だと CLI 呼び出しが
