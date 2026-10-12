@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-12
+
 ### Added
 - `Install-Go`（`lib/go.ps1`）: Go 本体を go.dev の配布一覧（`https://go.dev/dl/?mode=json`）にある MSI で
   導入、更新する。winget の `GoLang.Go` は同じ MSI を指すだけで、マニフェストの掲載が検証待ちで遅れる
@@ -654,7 +656,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/kan/booch-win/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/kan/booch-win/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/kan/booch-win/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/kan/booch-win/compare/v0.24.0...v0.25.0
