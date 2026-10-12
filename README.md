@@ -70,7 +70,14 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `winget.ps1`: winget 呼び出し、PATH 操作、導入判定、追跡外監査、設定 (settings.json) のキー単位更新
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロードと GitHub Releases の取得
-- `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入
+- `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入。Go 本体は winget を経由せず、
+  go.dev の配布一覧にある MSI で入れる（`Install-Go`）。winget の `GoLang.Go` は同じ MSI を指すだけで、
+  掲載が検証待ちで遅れることがあるため。未導入なら最新の安定版を入れ、導入済みなら古いときだけ更新する。
+  MSI は配布一覧の SHA256 と照合してから実行し、導入と更新は管理者権限でだけ行う。winget で入れた
+  既存の導入はそのまま上書き更新できる。利用側は `GoLang.Go` を winget の一覧から外す（残すと管理が二重になる）。
+  同じ MSI なので winget からは導入済みに見え続ける。追跡外監査（`Show-WingetUntracked`）を使うなら、
+  `-Tracked` に `GoLang.Go` を足して渡す（足さないと管理外として毎回警告される）。
+  doctor の更新有無表示には `Get-GoInstalledVersion` / `Get-GoLatestVersion` を使える
 - `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。Codex CLI は公式インストーラー
   （`install.ps1`）を子プロセスで実行して入れる（`Install-Codex [-Version <x.y.z>]`）。codex.exe 単体では
   付随する実行ファイルが揃わず動かないため。見える bin dir はインストーラーの既定
