@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 #
-# lib/codex.ps1: 機構 — Codex CLI (公式インストーラー) の導入と config.toml の更新
+# lib/codex.ps1: 機構 — Codex CLI (公式インストーラー) の導入、共有デーモンの版合わせ、config.toml の更新
 #
 # dotfiles-win.ps1 から dot-source される。最新版の確認に使う repo ($CodexRepo) は
 # config。GitHub 最新タグ取得は lib/github.ps1。
@@ -12,12 +12,14 @@
 # (SHA256 検証つき)、見える bin dir (既定 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin) を
 # junction で張り、User PATH に足す。
 # 依存: Invoke-Download / Get-EffectiveTimeout (lib/download.ps1)、Update-SessionPath
-# (lib/winget.ps1)、Get-VersionNumber (lib/doctor.ps1)。entry が全 lib をまとめて dot-source する。
+# (lib/winget.ps1)、Get-VersionNumber (lib/doctor.ps1)、Test-IsElevated (lib/system.ps1)。
+# entry が全 lib をまとめて dot-source する。
 #
 # テスト用の継ぎ目 (seam):
-#   Save-CodexInstaller      install.ps1 の取得 (ネットワーク)
-#   Invoke-CodexInstaller    install.ps1 を子プロセスで実行し終了コードを返す
-#   Get-CodexVersionOutput   指定した codex.exe の --version 出力
+#   Save-CodexInstaller        install.ps1 の取得 (ネットワーク)
+#   Invoke-CodexInstaller      install.ps1 を子プロセスで実行し終了コードを返す
+#   Get-CodexVersionOutput     指定した codex.exe の --version 出力
+#   Invoke-CodexDaemonCommand  codex.exe の app-server daemon <Command> の標準出力
 
 # GitHub のタグ (rust-vX.Y.Z / vX.Y.Z) を、codex --version とインストーラーの -Release が使う素の版にする。
 function ConvertTo-CodexVersion {
@@ -209,6 +211,96 @@ function Get-CodexLatestVersion {
         return (ConvertTo-CodexVersion $tag)
     }
     return ''
+}
+
+# インストーラーが置いた codex.exe で `app-server daemon <Command>` を上限時間つきで実行し、標準出力を
+# 返す。失敗、タイムアウト、codex.exe が無いときは $null。応答しないデーモンで呼び出し側を止めない
+# ため、Invoke-Quiet ではなく Process の WaitForExit で上限を付ける。
+# 共有デーモン (app-server) は自分用の codex (%CODEX_HOME%\packages\app-server-daemon) で動くので、
+# Install-Codex が CLI を更新しても、動いているデーモンは古い版のまま残る。
+function Invoke-CodexDaemonCommand {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [int]$TimeoutSec = 5
+    )
+    $exe = Join-Path (Get-CodexBinDir) 'codex.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return $null }
+    $proc = $null
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $exe
+        $psi.Arguments = "app-server daemon $Command"
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # 出力を先に読み始めないと、パイプが詰まって終了を待てなくなる。
+        $stdout = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+            try { $proc.Kill() } catch { Write-Verbose "codex daemon: 終了させられない: $_" }
+            return $null
+        }
+        if ($proc.ExitCode -ne 0) { return $null }
+        # 子孫がパイプを握ったままでも止まらないよう、読み取りの完了にも上限を付ける。
+        if (-not $stdout.Wait(1000)) { return $null }
+        return $stdout.Result
+    } catch {
+        return $null
+    } finally {
+        if ($proc) { $proc.Dispose() }
+    }
+}
+
+# CLI とデーモンの版を @{ Cli; App; Drift } で返す。Drift はどちらの版も空でなく、両者が違うとき真。
+# デーモンが止まっていれば `daemon version` が exit 1 になる (デーモンを起動しない) ので $null。
+# 版が読めないときも $null。CLI は PATH 上ではなく、インストーラーが置いた codex.exe を使う。
+function Get-CodexDaemonVersion {
+    $raw = Invoke-CodexDaemonCommand -Command 'version'
+    if (-not $raw) { return $null }
+    try {
+        $json = $raw | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+    $cli = [string]$json.cliVersion
+    $app = [string]$json.appServerVersion
+    return [pscustomobject]@{ Cli = $cli; App = $app; Drift = [bool]($cli -and $app -and $cli -ne $app) }
+}
+
+# CLI とデーモンの版がずれていたら、y/N を聞いて `codex app-server daemon update` で入れ替える
+# (実行中の作業が中断されうるので確認は省かない)。stop / start や restart では、デーモン用の codex が
+# 入っていれば入れ直さないので版のずれは直らない。
+# 昇格中は警告して何もしない (昇格したまま入れ替えるとデーモンが管理者権限で動く)。昇格した子で
+# setup する利用側は、子が終わった後の非昇格の親から呼ぶこと。
+function Sync-CodexDaemon {
+    $v = Get-CodexDaemonVersion
+    if (-not $v -or -not $v.Drift) { return }
+    if (Test-IsElevated) {
+        Write-Warn "codex daemon: CLI $($v.Cli) / デーモン $($v.App) (昇格中のため入れ替えない)"
+        return
+    }
+    Write-Host ''
+    Write-Host '--- Codex デーモン ---'
+    Write-Warn "codex daemon: CLI $($v.Cli) / デーモン $($v.App) (版がずれています)"
+    $r = Read-Host '  デーモンを入れ替えますか？ (Codex で実行中の作業は中断されます) [y/N]'
+    if ($r -notmatch '^[Yy]') {
+        Write-Info 'スキップしました (codex の /daemon か codex app-server daemon update で直せます)'
+        return
+    }
+    $null = Invoke-CodexDaemonCommand -Command 'update' -TimeoutSec 120
+    # 入れ替えた直後はデーモンが起動しきっておらず、版を読めないか、古いデーモンが答えることがある。
+    for ($i = 0; $i -lt 5; $i++) {
+        $v = Get-CodexDaemonVersion
+        if ($v -and $v.App -and -not $v.Drift) { break }
+        Start-Sleep -Seconds 1
+    }
+    if ($v -and $v.App -and -not $v.Drift) {
+        Write-Ok "codex daemon: 入れ替えました ($($v.App))"
+    } else {
+        Write-Fail 'codex daemon: 入れ替えられませんでした (codex の /daemon を試してください)'
+    }
 }
 
 # TOML テキストの「トップレベル」キーを冪等に設定して返す (Linux booch_set_toml_key の

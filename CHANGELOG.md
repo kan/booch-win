@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Added
+- `Sync-CodexDaemon`（`lib/codex.ps1`）: Codex の共有デーモン（app-server）の版が CLI とずれていれば、
+  y/N を聞いて `codex app-server daemon update` で入れ替える。デーモンは自分用の codex で動くので、
+  `Install-Codex` が CLI を更新しても古い版のまま残り、Codex の起動時に警告が出ていた。実行中の作業が
+  中断されうるので確認は省かない。昇格中は入れ替えない（デーモンが管理者権限で動くため）
+- `Get-CodexDaemonVersion` / `Invoke-CodexDaemonCommand`（`lib/codex.ps1`）: CLI とデーモンの版の取得と、
+  `app-server daemon <Command>` の上限時間つきの実行
+
 ## [0.26.0] - 2026-10-12
 
 ### Added

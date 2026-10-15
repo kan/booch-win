@@ -85,7 +85,11 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
   `~\.local\bin\codex.exe` は導入の成功後に削除する（再試行用に `Clear-LegacyCodexBinary` を単独でも呼べる）。
   `-Version` を省略するとインストーラーの latest になり、GitHub の最新タグとずれることがあるので、
   `Get-CodexLatestVersion` と比べてから入れるなら、その版を渡す。
-  更新も同じインストーラーで行い、current と直前の版より古い版は削除する。claude CLI は必ず
+  更新も同じインストーラーで行い、current と直前の版より古い版は削除する。
+  共有デーモン（app-server）は自分用の codex で動くので、CLI を更新しても古い版のまま残る。
+  `Sync-CodexDaemon` は、CLI とデーモンの版がずれていれば y/N を聞いて `codex app-server daemon update`
+  で入れ替える（版だけを見るなら `Get-CodexDaemonVersion`）。昇格中は入れ替えない（デーモンが
+  管理者権限で動くため）ので、昇格した子で setup するなら非昇格の親から呼ぶ。claude CLI は必ず
   `Get-ClaudeCommand`（実体解決）経由で呼ぶ（同名の関数やエイリアスが先に解決されるのを避けるため）。
   config dir（= アカウント）の切り替えは `Set-ClaudeConfigDir` / `Invoke-WithClaudeConfigDir`
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助

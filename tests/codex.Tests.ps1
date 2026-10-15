@@ -2,10 +2,11 @@
 # lib/codex.ps1 の導入まわりを検証する (Pester 5)。install.ps1 の取得と実行は seam を
 # モックし、実際のインストーラーは走らせない。
 #
-# 見たいのは次の 3 点。
+# 見たいのは次の 4 点。
 # - インストーラーへ渡す版と、失敗の検出 (終了コード)
 # - 導入後に現セッションの PATH を組み直すこと (子プロセスの PATH 変更は親に届かない)
 # - 旧版と旧単一バイナリ (~\.local\bin\codex.exe) を消す条件。別物や使用中の版を巻き込まないこと
+# - 共有デーモンの版のずれの判定と、入れ替えの条件 (確認を省かない、昇格中は入れ替えない)
 
 BeforeAll {
     $script:Root = Split-Path $PSScriptRoot -Parent
@@ -13,6 +14,7 @@ BeforeAll {
     . (Join-Path $lib 'common.ps1')
     . (Join-Path $lib 'winget.ps1')
     . (Join-Path $lib 'doctor.ps1')
+    . (Join-Path $lib 'system.ps1')
     . (Join-Path $lib 'codex.ps1')
 
     # 見える bin dir をテストごとの一時ディレクトリへ向ける (実環境の codex を見ない)。
@@ -227,5 +229,145 @@ Describe 'Get-CodexInstalledVersion' {
         Set-Content -LiteralPath (Join-Path $env:CODEX_INSTALL_DIR 'codex.exe') -Value 'x'
         Mock Get-CodexVersionOutput { 'codex-cli 0.154.0 (abcdef)' }
         Get-CodexInstalledVersion | Should -Be '0.154.0'
+    }
+}
+
+Describe 'Invoke-CodexDaemonCommand' {
+    BeforeEach { Enter-TestCodexBinDir }
+    AfterEach { Exit-TestCodexBinDir }
+
+    It 'bin dir に codex.exe が無ければ $null' {
+        Invoke-CodexDaemonCommand -Command 'version' | Should -BeNullOrEmpty
+    }
+
+    It '起動できない codex.exe なら throw せず $null' {
+        New-Item -ItemType Directory -Force -Path $env:CODEX_INSTALL_DIR | Out-Null
+        Set-Content -LiteralPath (Join-Path $env:CODEX_INSTALL_DIR 'codex.exe') -Value 'not an exe'
+        Invoke-CodexDaemonCommand -Command 'version' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-CodexDaemonVersion' {
+    It '版が同じなら Drift は偽' {
+        Mock Invoke-CodexDaemonCommand { '{"cliVersion":"0.159.2","appServerVersion":"0.159.2"}' }
+        $v = Get-CodexDaemonVersion
+        $v.Cli | Should -Be '0.159.2'
+        $v.App | Should -Be '0.159.2'
+        $v.Drift | Should -BeFalse
+        Should -Invoke Invoke-CodexDaemonCommand -Times 1 -Exactly -ParameterFilter { $Command -eq 'version' }
+    }
+
+    It '版が違えば Drift は真' {
+        Mock Invoke-CodexDaemonCommand { '{"cliVersion":"0.159.2","appServerVersion":"0.158.0"}' }
+        (Get-CodexDaemonVersion).Drift | Should -BeTrue
+    }
+
+    It 'どちらかの版が空なら Drift は偽' {
+        Mock Invoke-CodexDaemonCommand { '{"cliVersion":"0.159.2","appServerVersion":null}' }
+        $v = Get-CodexDaemonVersion
+        $v.App | Should -Be ''
+        $v.Drift | Should -BeFalse
+        Mock Invoke-CodexDaemonCommand { '{"appServerVersion":"0.158.0"}' }
+        (Get-CodexDaemonVersion).Drift | Should -BeFalse
+    }
+
+    It 'デーモンが止まっている (コマンドが exit 1 で失敗した) なら $null' {
+        Mock Invoke-CodexDaemonCommand { $null }
+        Get-CodexDaemonVersion | Should -BeNullOrEmpty
+    }
+
+    It 'JSON でなければ $null' {
+        Mock Invoke-CodexDaemonCommand { 'not json' }
+        Get-CodexDaemonVersion | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Sync-CodexDaemon' {
+    BeforeEach {
+        Mock Test-IsElevated { $false }
+        Mock Start-Sleep {}
+        Mock Write-Host {}
+        Mock Write-Info {}
+        Mock Write-Warn {}
+        Mock Write-Ok {}
+        Mock Write-Fail {}
+        Mock Read-Host { 'y' }
+        Mock Invoke-CodexDaemonCommand {}
+        $script:DaemonVersions = @()
+        $script:DaemonCalls = 0
+        # 呼ばれるたびに $script:DaemonVersions を先頭から返す (尽きたら最後の値を返し続ける)。
+        Mock Get-CodexDaemonVersion {
+            $i = [Math]::Min($script:DaemonCalls, $script:DaemonVersions.Count - 1)
+            $script:DaemonCalls++
+            $script:DaemonVersions[$i]
+        }
+        function New-TestDaemonVersion {
+            param([string]$Cli, [string]$App)
+            [pscustomobject]@{ Cli = $Cli; App = $App; Drift = [bool]($Cli -and $App -and $Cli -ne $App) }
+        }
+    }
+
+    It '版が揃っていれば何も聞かない' {
+        $script:DaemonVersions = @(New-TestDaemonVersion '0.159.2' '0.159.2')
+        Sync-CodexDaemon
+        Should -Invoke Read-Host -Times 0 -Exactly
+        Should -Invoke Invoke-CodexDaemonCommand -Times 0 -Exactly
+    }
+
+    It 'デーモンが止まっていれば何も聞かない' {
+        $script:DaemonVersions = @(New-TestDaemonVersion '0.159.2' '')
+        Sync-CodexDaemon
+        Should -Invoke Read-Host -Times 0 -Exactly
+    }
+
+    It '版が取れなければ何も聞かない' {
+        $script:DaemonVersions = @($null)
+        Sync-CodexDaemon
+        Should -Invoke Read-Host -Times 0 -Exactly
+    }
+
+    It '昇格中は警告だけして入れ替えない' {
+        Mock Test-IsElevated { $true }
+        $script:DaemonVersions = @(New-TestDaemonVersion '0.159.2' '0.158.0')
+        Sync-CodexDaemon
+        Should -Invoke Write-Warn -Times 1 -Exactly
+        Should -Invoke Read-Host -Times 0 -Exactly
+        Should -Invoke Invoke-CodexDaemonCommand -Times 0 -Exactly
+    }
+
+    It '断られたら入れ替えない' {
+        Mock Read-Host { 'n' }
+        $script:DaemonVersions = @(New-TestDaemonVersion '0.159.2' '0.158.0')
+        Sync-CodexDaemon
+        Should -Invoke Invoke-CodexDaemonCommand -Times 0 -Exactly
+    }
+
+    It '承諾されたら update し、新しいデーモンが答えるまで版を読み直す' {
+        $script:DaemonVersions = @(
+            (New-TestDaemonVersion '0.159.2' '0.158.0'),
+            $null,
+            (New-TestDaemonVersion '0.159.2' '0.158.0'),
+            (New-TestDaemonVersion '0.159.2' '0.159.2')
+        )
+        Sync-CodexDaemon
+        Should -Invoke Invoke-CodexDaemonCommand -Times 1 -Exactly -ParameterFilter { $Command -eq 'update' }
+        Should -Invoke Get-CodexDaemonVersion -Times 4 -Exactly
+        Should -Invoke Write-Ok -Times 1 -Exactly
+        Should -Invoke Write-Fail -Times 0 -Exactly
+    }
+
+    It '入れ替えても版がずれたままなら 5 回読み直して失敗を表示する' {
+        $script:DaemonVersions = @(New-TestDaemonVersion '0.159.2' '0.158.0')
+        Sync-CodexDaemon
+        Should -Invoke Get-CodexDaemonVersion -Times 6 -Exactly
+        Should -Invoke Write-Fail -Times 1 -Exactly
+        Should -Invoke Write-Ok -Times 0 -Exactly
+    }
+
+    It '読み直しても起動しなければ 5 回で諦めて失敗を表示する' {
+        $script:DaemonVersions = @((New-TestDaemonVersion '0.159.2' '0.158.0'), $null)
+        Sync-CodexDaemon
+        Should -Invoke Get-CodexDaemonVersion -Times 6 -Exactly
+        Should -Invoke Write-Fail -Times 1 -Exactly
     }
 }
