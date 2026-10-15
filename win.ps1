@@ -5,6 +5,8 @@
 .DESCRIPTION
     git すら無い Windows から「dotfiles-win setup が走る状態」までを 1 コマンドで持っていく。
     winget で git / gh を入れ、gh のブラウザ認証で private repo を clone し、本体へ委譲する。
+    winget が無ければ App Installer の登録を試し、それでも無ければ y/N を聞いて公式の手順
+    （Microsoft.WinGet.Client の Repair-WinGetPackageManager）で導入する。
 
     設定はすべて環境変数で渡す（下記）。booch-win は汎用ツールなので特定リポジトリを
     既定に埋め込まない。param ブロックを持たないのは、Windows PowerShell 5.1 の
@@ -72,11 +74,96 @@ function Initialize-Prereq {
         Write-Verbose "TLS1.2 の明示設定をスキップ: $_"
     }
 
-    if (-not (Test-Command winget)) {
-        # TODO(#11): App Installer 不在フォールバック（Git standalone 直 DL / App Installer 導入案内）
-        throw 'winget (App Installer) が見つかりません。Microsoft Store の "アプリ インストーラー" を入れてから再実行してください。'
+    Initialize-Winget
+}
+
+# --- 1a. winget の用意 ------------------------------------------------------
+# winget が無ければ次の順で用意する。Git だけを直接入れても、委譲先の dotfiles-win setup が
+# winget を使うので先へ進めない。そのため winget 自体を用意する。
+#   1. App Installer の登録を試す（初回ログオン直後は、入っていても登録が済んでいないことがある）
+#   2. y/N を聞き、公式の手順（Microsoft.WinGet.Client の Repair-WinGetPackageManager）で導入する
+#      （Windows Sandbox や LTSC など、App Installer 自体が無い環境）
+#   3. それでも無ければ、手で入れる方法を示して止まる
+function Initialize-Winget {
+    if (Test-Command winget) { Write-Ok 'winget available'; return }
+
+    Write-Step 'winget が見つかりません。App Installer の登録を試みます...'
+    Register-AppInstaller
+    Update-SessionPath
+    # 登録が済んでも、winget のエイリアス (%LOCALAPPDATA%\Microsoft\WindowsApps) は少し遅れて現れることがある。
+    for ($i = 0; $i -lt 5; $i++) {
+        if (Test-Command winget) { Write-Ok 'winget available (App Installer を登録)'; return }
+        Start-Sleep -Seconds 1
     }
-    Write-Ok 'winget available'
+
+    Write-Warn 'App Installer が入っていません。'
+    Write-Host '    PowerShell Gallery から NuGet プロバイダと Microsoft.WinGet.Client モジュールを'
+    Write-Host '    現在のユーザーに入れ、Repair-WinGetPackageManager で winget を導入できます。'
+    $r = Read-Host '  winget を導入しますか? [y/N]'
+    if ($r -match '^[Yy]') {
+        Write-Step 'winget を導入...'
+        $code = Install-WingetFromGallery
+        Update-SessionPath
+        if (Test-Command winget) { Write-Ok 'winget available (導入しました)'; return }
+        Write-Warn "winget を導入できませんでした (exit $code)"
+    }
+    throw (Get-WingetMissingMessage)
+}
+
+# App Installer の登録を要求する（Microsoft の案内どおり。管理者権限もネットワークも要らない）。
+# App Installer 自体が無ければ失敗するので、失敗は握り潰して次の段へ進む。
+function Register-AppInstaller {
+    try {
+        Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop
+    } catch {
+        Write-Verbose "App Installer を登録できない: $_"
+    }
+}
+
+# Microsoft.WinGet.Client の Repair-WinGetPackageManager で winget を導入し、終了コードを返す。
+# 子の Windows PowerShell で動かすのは、モジュールの読み込みが実行ポリシー（クライアントの既定は
+# Restricted）に阻まれないよう -ExecutionPolicy Bypass を付けるため（このセッションのポリシーは
+# 変えない）。スクリプトは -EncodedCommand で渡す（native へ渡す引数の引用符が崩れないように）。
+function Install-WingetFromGallery {
+    $script = @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+    Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Scope CurrentUser -Force | Out-Null
+    Import-Module Microsoft.WinGet.Client
+    # 昇格していれば Microsoft の手順どおり全ユーザーへ入れる (Windows Sandbox の利用者は管理者)。
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Repair-WinGetPackageManager -AllUsers
+    } else {
+        Repair-WinGetPackageManager
+    }
+} catch {
+    Write-Host "  [!] $_" -ForegroundColor Yellow
+    exit 1
+}
+exit 0
+'@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    # 子の出力は画面へ流す。パイプラインに残すと戻り値（終了コード）に混ざる。
+    Invoke-Native { & powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded | Out-Host }
+    return $LASTEXITCODE
+}
+
+# winget を用意できなかったときに示す、手で入れる方法。
+function Get-WingetMissingMessage {
+    return @'
+winget (App Installer) が見つかりません。次のどちらかで入れてから再実行してください。
+  - Microsoft Store の「アプリ インストーラー」: https://apps.microsoft.com/detail/9nblggh4nns1
+  - Windows Sandbox など Store が無い環境: Windows PowerShell で次を実行する
+      Set-ExecutionPolicy -Scope Process Bypass -Force
+      [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 'Tls12'
+      Install-PackageProvider -Name NuGet -Scope CurrentUser -Force
+      Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Scope CurrentUser -Force
+      Repair-WinGetPackageManager
+'@
 }
 
 # --- 2. 最小ツール導入（git / gh） ------------------------------------------

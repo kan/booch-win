@@ -23,6 +23,10 @@
   （`Get-StoreAutoDownloadPolicy` / `Test-StoreAutoUpdateDisabled` / `Disable-StoreAutoUpdate`）。
   PC 全体に効くので booch-win からは呼ばず、使うかどうかは利用側が決める
 - `Get-CurrentProcessAncestor`（`lib/system.ps1`）: 祖先プロセスの PID と名前を近い順に返す
+- `win.ps1`: winget（App Installer）が無い環境でも止まらずに進めるようにした。まず App Installer の登録を
+  試し（初回ログオン直後は登録が済んでいないことがある）、それでも無ければ y/N を聞いて、公式の手順
+  （PowerShell Gallery の `Microsoft.WinGet.Client` を現在のユーザーに入れ、`Repair-WinGetPackageManager`
+  を実行する）で導入する。断るか導入できなければ、Store のリンクと手で入れるコマンドを示して止まる
 
 ### Changed
 - `Get-CurrentProcessAncestorId`（`lib/system.ps1`）: プロセス一覧を 1 回だけ取り、メモリ上で親をたどるようにした。

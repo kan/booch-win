@@ -26,8 +26,10 @@ Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM
 
 ## 2. winget を入れる（Sandbox の弱点）
 
-**Windows Sandbox には既定で winget(App Installer) が無い。** `win.ps1` は winget 前提なので、
-実際の winget での導入まで試すには先に入れる。Sandbox 内 PowerShell で:
+**Windows Sandbox には既定で winget(App Installer) が無い。** `win.ps1` は winget が無いと、App Installer の
+登録を試した後に y/N を聞き、`Repair-WinGetPackageManager`（PowerShell Gallery の `Microsoft.WinGet.Client`）で
+導入する。**この流れを確かめるなら本ステップは飛ばす。** 本ステップは、winget を手で先に入れておきたいとき
+（導入の流れ以外を確かめたいとき）の手順。Sandbox 内 PowerShell で:
 
 ```powershell
 $ErrorActionPreference = 'Stop'; $t = "$env:TEMP\wg"; New-Item -ItemType Directory -Force $t | Out-Null
@@ -40,9 +42,7 @@ winget --version   # 出れば成功
 
 > `Add-AppxPackage` が `Microsoft.UI.Xaml` 依存エラーを出す場合は、対応する UI.Xaml の
 > appx を入れてから winget.msixbundle を再実行する（NuGet `Microsoft.UI.Xaml` から取得）。
-> ここが Sandbox で最も手間のかかる箇所。winget の導入を省いて**フォールバック動作だけ**確認したい
-> 場合は本ステップを飛ばし、`win.ps1` が「App Installer 不在」で分かりやすいメッセージを出して
-> 止まるかを見る（`win.ps1` の `Initialize-Prereq` にある TODO。代替手段の検討は #11）。
+> ここが Sandbox で最も手間のかかる箇所。
 
 ## 3. ワンライナーを実行（公開版）
 
@@ -55,7 +55,7 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 | # | 期待 | 見るところ |
 |---|---|---|
-| 1 | `winget available` | step2 を実施していれば OK。未実施なら親切な throw が出るか |
+| 1 | `winget available` | step2 を実施していれば OK。未実施なら y/N が出て、y で winget が入り先へ進むか。n なら手で入れる方法を示して止まるか |
 | 2 | `git` / `gh` を winget 導入 | Sandbox には入っていない前提。`--silent`。**Git.Git で UAC が出るか**を観察（要記録） |
 | 3 | PATH 再解決 | 直後に `git --version` / `gh --version` が通るか（"not found" にならないか） |
 | 4 | GitHub 認証 | `gh auth login --web` がブラウザ/コードを出すか。**Sandbox 内ブラウザで完遂できるか**を確認 |
@@ -68,7 +68,8 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - [ ] `winget install --silent` で UAC が出たか（出るなら README/コメントの「昇格は本体へ委譲」を再考）
 - [ ] PATH 再解決後に `git`/`gh` が即使えたか
 - [ ] 2 回目実行が冪等だったか（install skip / pull）
-- [ ] App Installer 不在時の throw メッセージで次の操作が分かるか（`win.ps1` の TODO にあるフォールバックの要否）
+- [ ] App Installer 不在時に `Repair-WinGetPackageManager` で winget を導入できたか（非管理者で通るか、UAC が出たか）
+- [ ] 導入を断ったときのメッセージで次の操作が分かるか
 
 ## ローカル版を試す（任意）
 

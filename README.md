@@ -24,7 +24,9 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 
 これだけで次が順に走る:
 
-1. `winget`（App Installer）の確認
+1. `winget`（App Installer）の確認。無ければ App Installer の登録を試し、それでも無ければ y/N を聞いて
+   公式の手順（PowerShell Gallery の `Microsoft.WinGet.Client` を現在のユーザーに入れ、
+   `Repair-WinGetPackageManager` を実行する）で導入する。断るか導入できなければ、手で入れる方法を示して止まる
 2. `git` / `gh`（GitHub CLI）を winget で導入（無い場合のみ＝冪等）
 3. 現セッションの PATH を再解決して `git` / `gh` を即利用可能にする
 4. `gh auth login`（ブラウザ/デバイスフロー）で GitHub 認証
