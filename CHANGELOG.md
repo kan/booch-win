@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-15
+
 ### Added
 - `Sync-CodexDaemon`（`lib/codex.ps1`）: Codex の共有デーモン（app-server）の版が CLI とずれていれば、
   y/N を聞いて `codex app-server daemon update` で入れ替える。デーモンは自分用の codex で動くので、
@@ -686,7 +688,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/kan/booch-win/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kan/booch-win/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/kan/booch-win/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/kan/booch-win/compare/v0.25.0...v0.25.1
