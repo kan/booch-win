@@ -13,6 +13,24 @@
   中断されうるので確認は省かない。昇格中は入れ替えない（デーモンが管理者権限で動くため）
 - `Get-CodexDaemonVersion` / `Invoke-CodexDaemonCommand`（`lib/codex.ps1`）: CLI とデーモンの版の取得と、
   `app-server daemon <Command>` の上限時間つきの実行
+- `Get-WslUpdateStatus` / `Update-WslPackage`（`lib/wsl.ps1`）: WSL 本体の導入済みの版（Store パッケージの版）と
+  GitHub の最新リリースを比べ、新しい版があれば `wsl --update` する。y/N と案内は利用側に残し、状態文字列を
+  返す。WSL から起動されているときは更新しない（VM ごと呼び出し元が止まるため）。更新後に版が上がらなければ
+  失敗ではなく `not-yet-available`（GitHub での公開から配信までのずれ）とする。あわせて
+  `Get-WslPackageVersion` / `Get-WslLatestVersion` / `Test-LaunchedFromWsl` を足した
+- `Get-WslDistros -Running`（`lib/wsl.ps1`）: 起動中のディストロだけを返す
+- `lib/store.ps1`: Microsoft Store の自動更新ポリシー（`AutoDownload`）の確認と停止
+  （`Get-StoreAutoDownloadPolicy` / `Test-StoreAutoUpdateDisabled` / `Disable-StoreAutoUpdate`）。
+  PC 全体に効くので booch-win からは呼ばず、使うかどうかは利用側が決める
+- `Get-CurrentProcessAncestor`（`lib/system.ps1`）: 祖先プロセスの PID と名前を近い順に返す
+
+### Changed
+- `Get-CurrentProcessAncestorId`（`lib/system.ps1`）: プロセス一覧を 1 回だけ取り、メモリ上で親をたどるようにした。
+  1 階層ごとに CIM を引いていたので、深いと数秒かかっていた
+
+### Fixed
+- `Get-WslDistros`（`lib/wsl.ps1`）: wsl.exe が非 0 で終わったとき（ディストロが 1 つも無いと案内文を出して
+  失敗する）、その案内文をディストロ名として返していた。空配列を返すようにした
 
 ## [0.26.0] - 2026-10-12
 

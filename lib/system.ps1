@@ -106,21 +106,33 @@ function Get-GitForWindowsProcess {
     })
 }
 
+# 現在のプロセスの祖先を近い順に列挙する (自プロセスは含まない)。各要素は ProcessId と Name を持つ。
+# 親が既に終了していれば、その要素の Name は空で、そこより上はたどれない。
+# プロセス一覧は 1 回だけ取り、メモリ上で親をたどる (1 階層ごとに CIM を引くと、深いと数秒かかる)。
+function Get-CurrentProcessAncestor {
+    $procs = @{}
+    Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name -ErrorAction SilentlyContinue |
+        ForEach-Object { $procs[[int]$_.ProcessId] = $_ }
+    $result = @()
+    $id = $PID
+    # 親を順にたどる。PID 再利用で系譜が循環する可能性に備えて上限を置く。
+    for ($i = 0; $i -lt 32; $i++) {
+        $p = $procs[$id]
+        if (-not $p -or -not $p.ParentProcessId) { break }
+        $id = [int]$p.ParentProcessId
+        $parent = $procs[$id]
+        $name = if ($parent) { [string]$parent.Name } else { '' }
+        $result += [pscustomobject]@{ ProcessId = $id; Name = $name }
+    }
+    return $result
+}
+
 # 現在のプロセスの祖先 PID を列挙する (自プロセスは含まない)。
 # Git for Windows 更新前の bash 終了で「自分の祖先を殺して自爆」しないための
 # 判定に使う (FromBash ラッパーを介さず git bash 内で powershell を開いた
 # ケースは環境変数では検出できないため、プロセス系譜で見る)。
 function Get-CurrentProcessAncestorId {
-    $ids = @()
-    $currentId = $PID
-    # 親を順にたどる。PID 再利用で系譜が循環する可能性に備えて上限を置く。
-    for ($i = 0; $i -lt 32; $i++) {
-        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$currentId" -ErrorAction SilentlyContinue
-        if (-not $p -or -not $p.ParentProcessId) { break }
-        $currentId = $p.ParentProcessId
-        $ids += $currentId
-    }
-    return $ids
+    return @(Get-CurrentProcessAncestor | ForEach-Object { $_.ProcessId })
 }
 
 # ファイルが実際にディスク上で占有しているバイト数を返す (論理サイズではない)。

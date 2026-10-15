@@ -94,7 +94,16 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
   config dir（= アカウント）の切り替えは `Set-ClaudeConfigDir` / `Invoke-WithClaudeConfigDir`
 - `font.ps1` / `openvpn.ps1` / `system.ps1`: Windows 環境補助
 - `keyboard.ps1`: キーボード remap（Scancode Map）と入力方式（TSF）の設定、TIP 登録の判定
-- `wsl.ps1`: WSL2 とディストロの導入
+- `wsl.ps1`: WSL2 とディストロの導入、WSL 本体の版の確認と更新。`Get-WslUpdateStatus -Repo microsoft/WSL`
+  が導入済みの版と GitHub の最新リリースを比べて状態（`not-installed` / `unknown` / `up-to-date` /
+  `skipped-from-wsl` / `available`）と起動中のディストロを返す。`available` なら、利用側が案内と y/N を出して
+  `Update-WslPackage -Latest <版>` を呼ぶ（`updated` / `not-yet-available` / `failed` / `skipped-from-wsl`
+  を返す）。更新は WSL の VM を止めるので、WSL から起動されているときは実行しない。GitHub で公開されて
+  から `wsl --update` で取れるまでずれることがあり、版が上がらなければ `not-yet-available` になる
+- `store.ps1`: Microsoft Store の自動更新ポリシーの確認（`Test-StoreAutoUpdateDisabled`）と停止
+  （`Disable-StoreAutoUpdate`、要管理者）。Store の自動更新は作業中の WSL を止めることがあるが、止めると
+  WSL 以外の Store アプリも更新されなくなるので、booch-win からは呼ばない。止めるかどうかは利用側の
+  config で決める
 - `apidoc.ps1`: `lib/*.ps1` のヘッダと公開関数を抽出して `booch-win help` を組み立てる
 - `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
 - `scaffold.ps1`: booch-win を使う repo の雛形を `templates/` から生成する
