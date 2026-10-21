@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-10-21
+
+### Fixed
+- `Update-Browser` / `Invoke-BrowserOnDemandUpdate`（`lib/browser.ps1`）: Chrome の更新を導入したときに
+  「想定外の状態で止まりました (state 3)」と失敗を表示していた。Chrome の updater は `install()` で確認から
+  やり直すので、導入を始めた直後に確認中 (3) へ戻る。導入段の待ちがこれを想定外として抜けていた
+  （導入そのものは裏で完了していた）。導入段でも確認中の状態を待ち続けるようにした
+
 ## [0.28.0] - 2026-10-21
 
 ### Added
@@ -713,7 +721,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/kan/booch-win/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/kan/booch-win/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kan/booch-win/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kan/booch-win/compare/v0.25.2...v0.26.0
