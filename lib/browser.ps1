@@ -47,8 +47,10 @@ $Script:BrowserStateInstallComplete = 14
 $Script:BrowserStateNoUpdate        = 16
 $Script:BrowserStateError           = 17
 # 待ち続ける状態。確認中は 1-3 (初期化から確認まで)、導入中は 4-13 (ダウンロードから導入まで) と 15 (一時停止)。
+# 導入中にも 1-3 を含める。Chrome の updater は install() で確認からやり直すので、導入を始めた直後に
+# 確認中 (3) へ戻る。含めないとそこで待ちを抜け、導入は裏で続いているのに失敗と表示する。
 $Script:BrowserStatesChecking   = @(1, 2, 3)
-$Script:BrowserStatesInstalling = @(4..13) + 15
+$Script:BrowserStatesInstalling = $Script:BrowserStatesChecking + @(4..13) + 15
 # 確認と導入それぞれの待ちの上限 (秒)。--no-timeout (Get-EffectiveTimeout が 0) なら無制限。
 $Script:BrowserUpdateTimeoutSec = 600
 

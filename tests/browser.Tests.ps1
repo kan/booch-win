@@ -68,6 +68,12 @@ Describe 'Invoke-BrowserOnDemandUpdate' {
         $script:Bundle.Calls | Should -Contain 'install'
     }
 
+    It '導入を始めた後に確認中へ戻っても待ち続ける (Chrome の updater は install で確認からやり直す)' {
+        $script:Bundle = New-FakeBundle -States @(3, 4, 3, 7, 13, 14)
+        $r = Invoke-BrowserOnDemandUpdate -ProgId 'X.Update3WebMachine' -AppId '{APP}'
+        $r.State | Should -Be 'updated'
+    }
+
     It 'エラーの状態なら error とエラーコードを返す (負の値も 8 桁で出す)' {
         $script:Bundle = New-FakeBundle -States @(3, 17) -ErrorCode -2147024891
         $r = Invoke-BrowserOnDemandUpdate -ProgId 'X.Update3WebMachine' -AppId '{APP}'
