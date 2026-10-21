@@ -247,7 +247,11 @@ Describe 'Update-GoDir' {
 
     It '新しい版を置けず旧版も戻せなければ、退避先を消さずに残す' {
         New-TestOldGo
-        # 退避 (Go → .Go-old-*) は通し、展開先へ置く移動 (新しい版と旧版の戻し) だけを失敗させる
+        # 退避 (Go → .Go-old-*) は通し、展開先へ置く移動 (新しい版と旧版の戻し) だけを失敗させる。
+        # 条件に合わない呼び出しの扱いは Pester の版で違う (5 は本物へ素通り、6 はエラー) ので、
+        # 本物へ回す既定のモックを明示する (6 はモジュール名付きの呼び出しもモックへ戻すので、cmdlet を直接呼ぶ)。
+        $script:RealMoveItem = Get-Command Move-Item -CommandType Cmdlet
+        Mock Move-Item { & $script:RealMoveItem -LiteralPath $LiteralPath -Destination $Destination -ErrorAction Stop }
         Mock Move-Item { throw 'locked' } -ParameterFilter { $Destination -eq $script:Target }
         { Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target } | Should -Throw '*旧版*'
         $kept = @(Get-ChildItem -LiteralPath $script:Parent -Force -Filter '.Go-old-*')
