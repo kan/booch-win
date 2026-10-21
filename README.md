@@ -73,13 +73,19 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロードと GitHub Releases の取得
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入。Go 本体は winget を経由せず、
-  go.dev の配布一覧にある MSI で入れる（`Install-Go`）。winget の `GoLang.Go` は同じ MSI を指すだけで、
-  掲載が検証待ちで遅れることがあるため。未導入なら最新の安定版を入れ、導入済みなら古いときだけ更新する。
-  MSI は配布一覧の SHA256 と照合してから実行し、導入と更新は管理者権限でだけ行う。winget で入れた
-  既存の導入はそのまま上書き更新できる。利用側は `GoLang.Go` を winget の一覧から外す（残すと管理が二重になる）。
-  同じ MSI なので winget からは導入済みに見え続ける。追跡外監査（`Show-WingetUntracked`）を使うなら、
-  `-Tracked` に `GoLang.Go` を足して渡す（足さないと管理外として毎回警告される）。
-  doctor の更新有無表示には `Get-GoInstalledVersion` / `Get-GoLatestVersion` を使える
+  go.dev の配布一覧にある zip をユーザー領域へ展開して入れる（`Install-Go [-InstallDir <dir>]`、既定は
+  `%LOCALAPPDATA%\Programs\Go`）。winget の `GoLang.Go` は go.dev の MSI を指すだけで、掲載が検証待ちで
+  遅れることがあるため。MSI を使わないのは、約 1.6 万ファイルを 1 つずつ処理するのでパッチ版の更新に
+  10 分以上かかるため（zip の展開と差し替えなら 30 秒ほど）。未導入なら最新の安定版を入れ、導入済みなら
+  古いときだけ差し替える。zip は配布一覧の SHA256 と照合してから一時フォルダへ展開し、差し替えに失敗したら
+  既存の導入を元に戻す（戻すこともできなければ、旧版を退避先 `.<leaf>-old-*` に残し、次の実行が戻す）。
+  管理者権限は要らない。`<InstallDir>\bin` と `go install` の出力先（GOBIN か GOPATH\bin）はユーザーの PATH へ
+  足す（MSI は削除時に GOPATH\bin も PATH から消すため）。MSI で入れた Go（winget の `GoLang.Go` を含む）が
+  残っていれば zip の導入後に削除する（削除だけは管理者権限が要る。権限が無い回は警告だけ出す。Machine の
+  PATH が先に引かれるので、残すと古い go が使われ続ける）。MSI 以外の経路（scoop など）で入った go が PATH に
+  あるなら、二重に入れないよう何もしない。利用側は `GoLang.Go` を winget の一覧から外す（残すと管理が二重になる）。
+  doctor の更新有無表示には `Get-GoInstalledVersion` / `Get-GoLatestVersion` を、MSI 版の残存の確認には
+  `Get-GoMsiProduct` を使える
 - `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。Codex CLI は公式インストーラー
   （`install.ps1`）を子プロセスで実行して入れる（`Install-Codex [-Version <x.y.z>]`）。codex.exe 単体では
   付随する実行ファイルが揃わず動かないため。見える bin dir はインストーラーの既定
@@ -106,6 +112,13 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
   （`Disable-StoreAutoUpdate`、要管理者）。Store の自動更新は作業中の WSL を止めることがあるが、止めると
   WSL 以外の Store アプリも更新されなくなるので、booch-win からは呼ばない。止めるかどうかは利用側の
   config で決める
+- `browser.ps1`: Chrome / Edge の更新（`Update-Browser -Name Chrome|Edge`）。設定画面の「更新を確認」と同じ
+  COM の on-demand API（`Update3WebMachine`）で確認し、新しい版があれば導入する。管理者権限は要らない。
+  CLI からの呼び出し（`updater.exe --wake` / `MicrosoftEdgeUpdate.exe /ua`）は前回の確認から一定時間が過ぎるまで
+  確認しないので使わない。winget も使わない（Chrome の安定版を Beta の ID と取り違えることがあり、Edge は
+  winget から更新できない）。ブラウザが起動中なら新しい版は次の起動で切り替わるので、そのときは再起動を
+  促す（再起動は代わりにしない）。doctor 向けに `Show-BrowserStatus -Name <n>`（版と再起動待ちの 1 行）を
+  使える。全ユーザー向けの導入だけが対象
 - `apidoc.ps1`: `lib/*.ps1` のヘッダと公開関数を抽出して `booch-win help` を組み立てる
 - `bootstrap.ps1`: 消費側から booch-win を取り込むためのルート解決とロード対象一覧
 - `scaffold.ps1`: booch-win を使う repo の雛形を `templates/` から生成する

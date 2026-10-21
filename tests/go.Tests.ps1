@@ -1,11 +1,13 @@
 ﻿#requires -Version 5.1
-# lib/go.ps1 の Go 本体の導入を検証する (Pester 5)。配布一覧の取得、MSI の取得、msiexec の
-# 実行は seam をモックし、実際のネットワークとインストーラーは使わない。
+# lib/go.ps1 の Go 本体の導入を検証する (Pester 5)。配布一覧の取得、zip の取得、msiexec の
+# 実行は seam をモックし、実際のネットワークとインストーラーは使わない。展開先の差し替えは
+# TestDrive の実ファイルで確かめる。
 #
-# 見たいのは次の 3 点。
+# 見たいのは次の 4 点。
 # - 導入する条件 (未導入 / 古い) と、しない条件 (最新 / 導入済みが新しい / 比較できない / 一覧を引けない)
-# - MSI を実行する前の検査 (管理者権限、アーキに合う MSI の有無、SHA256 の照合)
-# - 失敗しても例外を外へ出さず、一時ファイルを残さないこと
+# - 展開する前の検査 (アーキに合う zip の有無、ファイル名の形、SHA256 の照合)
+# - 差し替えに失敗しても既存の展開先を壊さず、一時フォルダを残さないこと
+# - MSI 版の削除は管理者権限があるときだけ行い、zip の導入より後に回すこと
 
 BeforeAll {
     $script:Root = Split-Path $PSScriptRoot -Parent
@@ -16,24 +18,33 @@ BeforeAll {
     . (Join-Path $lib 'winget.ps1')
     . (Join-Path $lib 'go.ps1')
 
-    # モックの Save-GoInstaller が書く中身と、その SHA256。
-    $script:MsiBody = 'fake msi body'
-    $probe = Join-Path $TestDrive 'probe.msi'
-    Set-Content -LiteralPath $probe -Value $script:MsiBody -NoNewline
-    $script:MsiSha = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
+    # モックの Save-GoArchive が書く中身と、その SHA256。
+    $script:ZipBody = 'fake zip body'
+    $probe = Join-Path $TestDrive 'probe.zip'
+    Set-Content -LiteralPath $probe -Value $script:ZipBody -NoNewline
+    $script:ZipSha = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
 
     function New-TestGoRelease {
-        param([string]$Version = 'go1.27.2', [string]$Sha = $script:MsiSha)
+        param([string]$Version = 'go1.27.2', [string]$Sha = $script:ZipSha)
         [pscustomobject]@{
             version = $Version
             stable  = $true
             files   = @(
-                [pscustomobject]@{ filename = "$Version.windows-amd64.zip"; os = 'windows'; arch = 'amd64'; kind = 'archive';   sha256 = 'zip' }
-                [pscustomobject]@{ filename = "$Version.windows-arm64.msi"; os = 'windows'; arch = 'arm64'; kind = 'installer'; sha256 = $Sha }
-                [pscustomobject]@{ filename = "$Version.windows-amd64.msi"; os = 'windows'; arch = 'amd64'; kind = 'installer'; sha256 = $Sha }
+                [pscustomobject]@{ filename = "$Version.windows-amd64.msi"; os = 'windows'; arch = 'amd64'; kind = 'installer'; sha256 = 'msi' }
+                [pscustomobject]@{ filename = "$Version.windows-arm64.zip"; os = 'windows'; arch = 'arm64'; kind = 'archive';   sha256 = $Sha }
+                [pscustomobject]@{ filename = "$Version.windows-amd64.zip"; os = 'windows'; arch = 'amd64'; kind = 'archive';   sha256 = $Sha }
                 [pscustomobject]@{ filename = "$Version.linux-amd64.tar.gz"; os = 'linux';  arch = 'amd64'; kind = 'archive';   sha256 = 'tgz' }
             )
         }
+    }
+
+    # 配布物と同じ形 (go\VERSION と go\bin\go.exe) の展開結果を $Destination に作る。
+    function New-TestGoTree {
+        param([string]$Destination, [string]$Version = 'go1.27.2')
+        $bin = Join-Path $Destination 'go\bin'
+        New-Item -ItemType Directory -Force -Path $bin | Out-Null
+        Set-Content -LiteralPath (Join-Path $Destination 'go\VERSION') -Value "$Version`ntime 2026-10-01T00:00:00Z"
+        Set-Content -LiteralPath (Join-Path $bin 'go.exe') -Value 'fake'
     }
 }
 
@@ -164,20 +175,153 @@ Describe 'Get-GoLatestVersion' {
     }
 }
 
+Describe 'Get-GoDirVersion' {
+    It 'VERSION の 1 行目を返す' {
+        $dir = Join-Path $TestDrive 'ver-ok'
+        New-TestGoTree -Destination $dir -Version 'go1.27.3'
+        Get-GoDirVersion -Dir (Join-Path $dir 'go') | Should -Be 'go1.27.3'
+    }
+
+    It 'フォルダや VERSION が無いとき、中身が版の形でないときは空を返す' {
+        Get-GoDirVersion -Dir (Join-Path $TestDrive 'nothing') | Should -Be ''
+        $dir = Join-Path $TestDrive 'ver-bad'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'VERSION') -Value 'devel +abc'
+        Get-GoDirVersion -Dir $dir | Should -Be ''
+    }
+}
+
+Describe 'Update-GoDir' {
+    BeforeEach {
+        $script:Parent  = Join-Path $TestDrive ('swap-' + [guid]::NewGuid().ToString('N'))
+        $script:Target  = Join-Path $script:Parent 'Go'
+        $script:ZipPath = Join-Path $TestDrive 'any.zip'
+        Mock Expand-GoArchive { New-TestGoTree -Destination $Destination -Version 'go1.27.2' }
+        # 既存の展開先 (go1.27.0) を $script:Target に作る。
+        function New-TestOldGo {
+            $seed = Join-Path $TestDrive ('seed-' + [guid]::NewGuid().ToString('N'))
+            New-TestGoTree -Destination $seed -Version 'go1.27.0'
+            New-Item -ItemType Directory -Force -Path $script:Parent | Out-Null
+            Move-Item (Join-Path $seed 'go') $script:Target
+        }
+    }
+
+    It '未導入なら展開先を作る' {
+        Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target
+        Get-GoDirVersion -Dir $script:Target | Should -Be 'go1.27.2'
+    }
+
+    It '既存の展開先を差し替え、一時フォルダを残さない' {
+        New-TestOldGo
+        Set-Content -LiteralPath (Join-Path $script:Target 'stale.txt') -Value 'old'
+        Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target
+        Get-GoDirVersion -Dir $script:Target | Should -Be 'go1.27.2'
+        Test-Path -LiteralPath (Join-Path $script:Target 'stale.txt') | Should -BeFalse
+        @(Get-ChildItem -LiteralPath $script:Parent -Force).Name | Should -Be @('Go')
+    }
+
+    It '前回の実行が残した一時フォルダを片付ける' {
+        New-Item -ItemType Directory -Force -Path (Join-Path $script:Parent '.Go-old-leftover') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $script:Parent '.Go-new-leftover') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $script:Parent 'OtherApp') | Out-Null
+        Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target
+        @(Get-ChildItem -LiteralPath $script:Parent -Force).Name | Sort-Object | Should -Be @('Go', 'OtherApp')
+    }
+
+    It '展開結果に go.exe が無ければ差し替えず、既存の展開先を残す' {
+        New-TestOldGo
+        Mock Expand-GoArchive { New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'go') | Out-Null }
+        { Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target } | Should -Throw '*go.exe*'
+        Get-GoDirVersion -Dir $script:Target | Should -Be 'go1.27.0'
+        @(Get-ChildItem -LiteralPath $script:Parent -Force).Name | Should -Be @('Go')
+    }
+
+    It '前回の実行が退避と差し替えの間で止まっていたら、退避先から旧版を戻す' {
+        New-TestOldGo
+        Move-Item $script:Target (Join-Path $script:Parent '.Go-old-crashed')
+        Mock Expand-GoArchive { throw 'tar.exe failed (exit 1)' }
+        { Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target } | Should -Throw
+        Get-GoDirVersion -Dir $script:Target | Should -Be 'go1.27.0'
+        @(Get-ChildItem -LiteralPath $script:Parent -Force).Name | Should -Be @('Go')
+    }
+
+    It '新しい版を置けず旧版も戻せなければ、退避先を消さずに残す' {
+        New-TestOldGo
+        # 退避 (Go → .Go-old-*) は通し、展開先へ置く移動 (新しい版と旧版の戻し) だけを失敗させる
+        Mock Move-Item { throw 'locked' } -ParameterFilter { $Destination -eq $script:Target }
+        { Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target } | Should -Throw '*旧版*'
+        $kept = @(Get-ChildItem -LiteralPath $script:Parent -Force -Filter '.Go-old-*')
+        $kept.Count | Should -Be 1
+        Get-GoDirVersion -Dir $kept[0].FullName | Should -Be 'go1.27.0'
+    }
+
+    It '展開に失敗したら既存の展開先を残す' {
+        New-TestOldGo
+        Mock Expand-GoArchive { throw 'tar.exe failed (exit 1)' }
+        { Update-GoDir -ZipPath $script:ZipPath -InstallDir $script:Target } | Should -Throw '*tar.exe*'
+        Get-GoDirVersion -Dir $script:Target | Should -Be 'go1.27.0'
+        @(Get-ChildItem -LiteralPath $script:Parent -Force).Name | Should -Be @('Go')
+    }
+}
+
+Describe 'Remove-GoMsiProduct' {
+    BeforeEach {
+        $script:Products = @([pscustomobject]@{ ProductCode = '{AAAA-BBBB}'; Version = '1.27.3' })
+        Mock Test-IsElevated { $true }
+        Mock Invoke-GoMsiUninstall { 0 }
+        Mock Write-Info {}
+        Mock Write-Ok {}
+        Mock Write-Warn {}
+        Mock Write-Fail {}
+    }
+
+    It '管理者権限があれば msiexec /x で削除して $true を返す' {
+        Remove-GoMsiProduct -Products $script:Products | Should -BeTrue
+        Should -Invoke Invoke-GoMsiUninstall -Times 1 -Exactly -ParameterFilter { $ProductCode -eq '{AAAA-BBBB}' }
+    }
+
+    It '3010 も成功として扱う' {
+        Mock Invoke-GoMsiUninstall { 3010 }
+        Remove-GoMsiProduct -Products $script:Products | Should -BeTrue
+        Should -Invoke Write-Fail -Times 0 -Exactly
+    }
+
+    It '管理者権限が無ければ削除せず、警告して $false を返す' {
+        Mock Test-IsElevated { $false }
+        Remove-GoMsiProduct -Products $script:Products | Should -BeFalse
+        Should -Invoke Invoke-GoMsiUninstall -Times 0 -Exactly
+        Should -Invoke Write-Warn -Times 1 -Exactly -ParameterFilter { $Msg -like '*1.27.3*管理者*' }
+    }
+
+    It 'msiexec が失敗したら失敗を表示して $false を返す' {
+        Mock Invoke-GoMsiUninstall { 1603 }
+        Remove-GoMsiProduct -Products $script:Products | Should -BeFalse
+        Should -Invoke Write-Fail -Times 1 -Exactly -ParameterFilter { $Msg -like '*exit 1603*' }
+    }
+}
+
 Describe 'Install-Go' {
     BeforeEach {
-        # 導入済みの版。Invoke-GoInstaller のモックが成功すると最新へ進める。
-        $script:Installed = 'go1.27.0'
-        $script:SavedTo   = $null
+        # $script:DirVer は展開先の版、$script:PathVer は PATH で見つかる go の版。
+        # Update-GoDir のモックが成功すると、どちらも最新へ進める。
+        $script:InstallDir = Join-Path $TestDrive 'Programs\Go'
+        $script:DirVer   = 'go1.27.0'
+        $script:PathVer  = 'go1.27.0'
+        $script:SavedTo  = $null
+        $script:Calls    = [System.Collections.Generic.List[string]]::new()
         Mock Get-GoRelease { New-TestGoRelease }
-        Mock Get-GoInstalledVersion { $script:Installed }
+        Mock Get-GoDirVersion { $script:DirVer }
+        Mock Get-GoInstalledVersion { $script:PathVer }
         Mock Get-GoArch { 'amd64' }
-        Mock Test-IsElevated { $true }
-        Mock Save-GoInstaller {
+        Mock Get-GoMsiProduct { @() }
+        Mock Save-GoArchive {
             $script:SavedTo = $OutFile
-            Set-Content -LiteralPath $OutFile -Value $script:MsiBody -NoNewline
+            Set-Content -LiteralPath $OutFile -Value $script:ZipBody -NoNewline
         }
-        Mock Invoke-GoInstaller { $script:Installed = 'go1.27.2'; 0 }
+        Mock Update-GoDir { $script:Calls.Add('update'); $script:DirVer = 'go1.27.2'; $script:PathVer = 'go1.27.2' }
+        Mock Remove-GoMsiProduct { $script:Calls.Add('msi'); $true }
+        Mock Get-GoPathBin { 'C:\Users\me\go\bin' }
+        Mock Add-UserPathEntry { $false }
         Mock Update-SessionPath {}
         Mock Write-Info {}
         Mock Write-Ok {}
@@ -185,122 +329,160 @@ Describe 'Install-Go' {
         Mock Write-Fail {}
     }
 
-    It '古ければアーキに合う MSI を取得して実行し、PATH を組み直して一時ファイルを残さない' {
-        Install-Go
-        Should -Invoke Save-GoInstaller -Times 1 -Exactly -ParameterFilter { $FileName -eq 'go1.27.2.windows-amd64.msi' }
-        Should -Invoke Invoke-GoInstaller -Times 1 -Exactly -ParameterFilter { $MsiPath -eq $script:SavedTo }
+    It '古ければアーキに合う zip を取得して差し替え、PATH を整えて一時ファイルを残さない' {
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Save-GoArchive -Times 1 -Exactly -ParameterFilter { $FileName -eq 'go1.27.2.windows-amd64.zip' }
+        Should -Invoke Update-GoDir -Times 1 -Exactly -ParameterFilter { $ZipPath -eq $script:SavedTo -and $InstallDir -eq $script:InstallDir }
+        Should -Invoke Add-UserPathEntry -Times 1 -Exactly -ParameterFilter { $Path -eq (Join-Path $script:InstallDir 'bin') }
         Should -Invoke Update-SessionPath -Times 1 -Exactly
         Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -like '*go1.27.0*go1.27.2*' }
         Test-Path -LiteralPath (Split-Path $script:SavedTo -Parent) | Should -BeFalse
     }
 
+    It '管理者権限を求めない (展開先はユーザー領域)' {
+        Mock Test-IsElevated { $false }
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Update-GoDir -Times 1 -Exactly
+        Should -Invoke Write-Warn -Times 0 -Exactly
+    }
+
     It '未導入なら最新を入れる' {
-        $script:Installed = ''
-        Install-Go
-        Should -Invoke Invoke-GoInstaller -Times 1 -Exactly
+        $script:DirVer = ''; $script:PathVer = ''
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Update-GoDir -Times 1 -Exactly
         Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -eq 'Go: go1.27.2' }
     }
 
-    It 'arm64 では arm64 の MSI を選ぶ' {
+    It 'arm64 では arm64 の zip を選ぶ' {
         Mock Get-GoArch { 'arm64' }
-        Install-Go
-        Should -Invoke Save-GoInstaller -Times 1 -Exactly -ParameterFilter { $FileName -eq 'go1.27.2.windows-arm64.msi' }
-        Should -Invoke Invoke-GoInstaller -Times 1 -Exactly
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Save-GoArchive -Times 1 -Exactly -ParameterFilter { $FileName -eq 'go1.27.2.windows-arm64.zip' }
     }
 
     It '最新なら何も取得しない' {
-        $script:Installed = 'go1.27.2'
-        Install-Go
-        Should -Invoke Save-GoInstaller -Times 0 -Exactly
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
+        $script:DirVer = 'go1.27.2'; $script:PathVer = 'go1.27.2'
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Save-GoArchive -Times 0 -Exactly
+        Should -Invoke Update-GoDir -Times 0 -Exactly
         Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -like '*up to date*' }
     }
 
-    It '導入済みが安定版より新しいとき、または rc で比較できないときは触らない' {
-        $script:Installed = 'go1.28.0'
-        Install-Go
-        $script:Installed = 'go1.28rc1'
-        Install-Go
-        Should -Invoke Save-GoInstaller -Times 0 -Exactly
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
+    It '展開先が新しいとき、または rc で比較できないときは触らない' {
+        $script:DirVer = 'go1.28.0'
+        Install-Go -InstallDir $script:InstallDir
+        $script:DirVer = 'go1.28rc1'
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Save-GoArchive -Times 0 -Exactly
+        Should -Invoke Update-GoDir -Times 0 -Exactly
+    }
+
+    It '展開先が空で MSI 版の go が新しければ触らない' {
+        $script:DirVer = ''; $script:PathVer = 'go1.28.0'
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.28.0' }) }
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Update-GoDir -Times 0 -Exactly
+        Should -Invoke Remove-GoMsiProduct -Times 0 -Exactly
+    }
+
+    It 'MSI 以外の経路で入った go が PATH にあれば、古くても二重に入れない' {
+        $script:DirVer = ''; $script:PathVer = 'go1.27.0'
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Save-GoArchive -Times 0 -Exactly
+        Should -Invoke Add-UserPathEntry -Times 0 -Exactly
+        Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -like '*別の経路*' }
+    }
+
+    It 'go install の出力先もユーザーの PATH へ足す (MSI の削除で消えるため)' {
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Add-UserPathEntry -Times 1 -Exactly -ParameterFilter { $Path -eq 'C:\Users\me\go\bin' }
+    }
+
+    It 'MSI 版からの移行: 展開先へ入れてから MSI 版を削除する' {
+        $script:DirVer = ''; $script:PathVer = 'go1.27.0'
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.27.0' }) }
+        Install-Go -InstallDir $script:InstallDir
+        $script:Calls | Should -Be @('update', 'msi')
+        Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -like '*go1.27.0*go1.27.2*' }
+    }
+
+    It '展開先が最新でも、MSI 版が残っていれば削除する' {
+        $script:DirVer = 'go1.27.2'; $script:PathVer = 'go1.27.2'
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.27.2' }) }
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Update-GoDir -Times 0 -Exactly
+        Should -Invoke Remove-GoMsiProduct -Times 1 -Exactly
+    }
+
+    It 'MSI 版を削除できず PATH で古い go が先に見つかるときは、二重に警告しない' {
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.27.0' }) }
+        Mock Remove-GoMsiProduct { $false }
+        Mock Update-GoDir { $script:DirVer = 'go1.27.2' }   # PATH の go は 1.27.0 のまま
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Write-Warn -Times 0 -Exactly
+        Should -Invoke Write-Ok -Times 0 -Exactly
     }
 
     It '配布一覧を引けなければ警告だけ出し、最新とは表示しない' {
         Mock Get-GoRelease { $null }
-        Install-Go
+        Install-Go -InstallDir $script:InstallDir
         Should -Invoke Write-Warn -Times 1 -Exactly
         Should -Invoke Write-Ok -Times 0 -Exactly
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
+        Should -Invoke Update-GoDir -Times 0 -Exactly
     }
 
-    It '管理者権限が無ければ取得も実行もしない' {
-        Mock Test-IsElevated { $false }
-        Install-Go
-        Should -Invoke Write-Warn -Times 1 -Exactly -ParameterFilter { $Msg -like '*管理者*' }
-        Should -Invoke Save-GoInstaller -Times 0 -Exactly
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
-    }
-
-    It 'アーキに合う MSI が無ければ失敗を表示して実行しない' {
+    It 'アーキに合う zip が無ければ失敗を表示して取得しない' {
         Mock Get-GoArch { '' }
-        Install-Go
+        Install-Go -InstallDir $script:InstallDir
         Mock Get-GoArch { 'riscv64' }
-        Install-Go
+        Install-Go -InstallDir $script:InstallDir
         Should -Invoke Write-Fail -Times 2 -Exactly
-        Should -Invoke Save-GoInstaller -Times 0 -Exactly
+        Should -Invoke Save-GoArchive -Times 0 -Exactly
     }
 
-    It '配布一覧のファイル名が MSI の形でなければ取得しない' {
+    It '配布一覧のファイル名が zip の形でなければ取得しない' {
         Mock Get-GoRelease {
             $r = New-TestGoRelease
-            ($r.files | Where-Object { $_.arch -eq 'amd64' -and $_.kind -eq 'installer' }).filename = '../evil.msi'
+            ($r.files | Where-Object { $_.arch -eq 'amd64' -and $_.kind -eq 'archive' -and $_.os -eq 'windows' }).filename = '../evil.zip'
             $r
         }
-        Install-Go
+        Install-Go -InstallDir $script:InstallDir
         Should -Invoke Write-Fail -Times 1 -Exactly
-        Should -Invoke Save-GoInstaller -Times 0 -Exactly
+        Should -Invoke Save-GoArchive -Times 0 -Exactly
     }
 
-    It 'SHA256 が一致しなければ MSI を実行せず、一時ファイルを残さない' {
+    It 'SHA256 が一致しなければ展開せず、PATH にも MSI 版にも触れず、一時ファイルを残さない' {
         Mock Get-GoRelease { New-TestGoRelease -Sha ('0' * 64) }
-        { Install-Go } | Should -Not -Throw
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.27.0' }) }
+        { Install-Go -InstallDir $script:InstallDir } | Should -Not -Throw
+        Should -Invoke Update-GoDir -Times 0 -Exactly
         Should -Invoke Write-Fail -Times 1 -Exactly -ParameterFilter { $Msg -like '*SHA256*' }
-        Should -Invoke Update-SessionPath -Times 0 -Exactly
+        Should -Invoke Add-UserPathEntry -Times 0 -Exactly
+        Should -Invoke Remove-GoMsiProduct -Times 0 -Exactly
         Test-Path -LiteralPath (Split-Path $script:SavedTo -Parent) | Should -BeFalse
     }
 
     It 'SHA256 は大文字と小文字を区別せずに照合する' {
-        Mock Get-GoRelease { New-TestGoRelease -Sha $script:MsiSha.ToUpperInvariant() }
-        Install-Go
-        Should -Invoke Invoke-GoInstaller -Times 1 -Exactly
+        Mock Get-GoRelease { New-TestGoRelease -Sha $script:ZipSha.ToUpperInvariant() }
+        Install-Go -InstallDir $script:InstallDir
+        Should -Invoke Update-GoDir -Times 1 -Exactly
     }
 
-    It '取得に失敗したら実行せず、例外を外へ出さない' {
-        Mock Save-GoInstaller { throw 'download failed' }
-        { Install-Go } | Should -Not -Throw
-        Should -Invoke Invoke-GoInstaller -Times 0 -Exactly
+    It '取得や差し替えに失敗したら例外を外へ出さず、MSI 版を残す' {
+        Mock Get-GoMsiProduct { @([pscustomobject]@{ ProductCode = '{AAAA}'; Version = '1.27.0' }) }
+        Mock Save-GoArchive { throw 'download failed' }
+        { Install-Go -InstallDir $script:InstallDir } | Should -Not -Throw
         Should -Invoke Write-Fail -Times 1 -Exactly -ParameterFilter { $Msg -like '*download failed*' }
-    }
-
-    It 'msiexec が非 0 で終わったら失敗を表示し、PATH に触れない' {
-        Mock Invoke-GoInstaller { 1603 }
-        { Install-Go } | Should -Not -Throw
-        Should -Invoke Write-Fail -Times 1 -Exactly -ParameterFilter { $Msg -like '*exit 1603*' }
+        Mock Save-GoArchive { Set-Content -LiteralPath $OutFile -Value $script:ZipBody -NoNewline }
+        Mock Update-GoDir { throw 'in use' }
+        { Install-Go -InstallDir $script:InstallDir } | Should -Not -Throw
+        Should -Invoke Write-Fail -Times 1 -Exactly -ParameterFilter { $Msg -like '*in use*' }
+        Should -Invoke Remove-GoMsiProduct -Times 0 -Exactly
         Should -Invoke Update-SessionPath -Times 0 -Exactly
-        Should -Invoke Write-Ok -Times 0 -Exactly
-    }
-
-    It 'msiexec の 3010 は成功として扱い、再起動が要ると伝える' {
-        Mock Invoke-GoInstaller { $script:Installed = 'go1.27.2'; 3010 }
-        Install-Go
-        Should -Invoke Write-Fail -Times 0 -Exactly
-        Should -Invoke Write-Ok -Times 1 -Exactly -ParameterFilter { $Msg -like '*再起動*' }
     }
 
     It '導入後も go version が最新を返さなければ警告する' {
-        Mock Invoke-GoInstaller { 0 }
-        Install-Go
+        Mock Update-GoDir { $script:DirVer = 'go1.27.2' }
+        Install-Go -InstallDir $script:InstallDir
         Should -Invoke Write-Warn -Times 1 -Exactly -ParameterFilter { $Msg -like '*go1.27.2*' }
         Should -Invoke Write-Ok -Times 0 -Exactly
     }

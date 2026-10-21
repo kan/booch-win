@@ -6,6 +6,29 @@
 
 ## [Unreleased]
 
+### Added
+- `lib/browser.ps1`: Chrome / Edge の更新を確認し、新しい版があれば導入する（`Update-Browser -Name Chrome|Edge`）。
+  設定画面の「更新を確認」と同じ COM の on-demand API を使うので、管理者権限は要らない。定期確認の間隔にも
+  縛られない。CLI の `updater.exe --wake` / `MicrosoftEdgeUpdate.exe /ua` は、前回の確認から 4.5 時間などが
+  過ぎるまで確認しない。起動中のブラウザは次の起動で切り替わるので、そのときは再起動を促す。
+  doctor 向けの `Show-BrowserStatus`（版と再起動待ちを 1 行で出す。ネットワークへは出ない）と、
+  `Get-BrowserInstalledVersion` / `Get-BrowserRunningVersion` / `Test-BrowserRelaunchPending` /
+  `Invoke-BrowserOnDemandUpdate` も足した。待ちの上限は `Get-EffectiveTimeout` を通す（`--no-timeout` で無制限）
+
+### Changed
+- `Install-Go`（`lib/go.ps1`）: MSI ではなく go.dev の zip で入れるようにした。展開先はユーザー領域
+  （既定は `%LOCALAPPDATA%\Programs\Go`。`-InstallDir` で変えられる）で、管理者権限は要らない。MSI は
+  約 1.6 万ファイルを旧版の削除と新版の導入で 2 回処理するので、パッチ版の更新に 11 分半かかっていた。
+  zip を `tar.exe` で一時フォルダへ展開して差し替える形にして、更新は 30 秒ほど（実測 27 秒）で終わる。
+  `<InstallDir>\bin` をユーザーの PATH へ足し、MSI で入れた Go が残っていれば zip の導入後に削除する
+  （削除だけは管理者権限が要る）。MSI は削除時に GOPATH\bin もユーザーの PATH から消すので、`go install` の
+  出力先も PATH へ足し直す。版の判定は展開先の `VERSION` ファイルで行い、展開先が空のときだけ PATH 上の
+  MSI 版の go で判定する。MSI 以外の経路（scoop など）で入った go があれば二重に入れない。差し替えで旧版を
+  戻せなかったときは退避先に残し、次の実行が戻す
+- `Save-GoInstaller` / `Invoke-GoInstaller` を外し、`Save-GoArchive` / `Expand-GoArchive` /
+  `Update-GoDir` / `Remove-GoTree` / `Get-GoPathBin` / `Get-GoMsiProduct` / `Invoke-GoMsiUninstall` / `Remove-GoMsiProduct` /
+  `Get-GoDirVersion` / `Get-GoDefaultInstallDir` を足した
+
 ## [0.27.0] - 2026-10-15
 
 ### Added
