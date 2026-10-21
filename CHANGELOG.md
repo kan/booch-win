@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-21
+
 ### Added
 - `lib/browser.ps1`: Chrome / Edge の更新を確認し、新しい版があれば導入する（`Update-Browser -Name Chrome|Edge`）。
   設定画面の「更新を確認」と同じ COM の on-demand API を使うので、管理者権限は要らない。定期確認の間隔にも
@@ -711,7 +713,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/kan/booch-win/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kan/booch-win/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kan/booch-win/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/kan/booch-win/compare/v0.25.1...v0.25.2
