@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-31
+
 ### Added
 - `lib/wsl.ps1`: `.wslconfig` の推奨値の計算と状態の判定を足した。`.wslconfig` が無いと、WSL が使えるメモリは
   物理メモリの半分になる。`Get-WslConfigRecommendation` は、物理メモリと割合（`ReserveMinGB` / `ReserveRatio` /
@@ -730,7 +732,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/kan/booch-win/compare/v0.28.1...v0.29.0
 [0.28.1]: https://github.com/kan/booch-win/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/kan/booch-win/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kan/booch-win/compare/v0.26.0...v0.27.0
