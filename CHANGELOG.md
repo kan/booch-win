@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### Added
+- `lib/wsl.ps1`: `.wslconfig` の推奨値の計算と状態の判定を足した。`.wslconfig` が無いと、WSL が使えるメモリは
+  物理メモリの半分になる。`Get-WslConfigRecommendation` は、物理メモリと割合（`ReserveMinGB` / `ReserveRatio` /
+  `SwapMaxGB`）から memory と swap の推奨値を計算し、作ると既定より増えるか（`Beneficial`）も返す。
+  `Get-WslConfigLines` はファイルの行を ASCII だけで組み立てる。`Get-WslConfigStatus` は doctor 向けに、
+  `missing` / `not-needed` / `no-section` / `ok` の状態と `[wsl2]` 節の memory / swap を返す。あわせて
+  `Get-WslConfigPath` / `Get-PhysicalMemoryGB` / `Read-WslConfigWsl2` を足した。作るかどうかの y/N と割合は
+  利用側が持つ
+
 ## [0.28.1] - 2026-10-21
 
 ### Fixed

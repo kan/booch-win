@@ -107,7 +107,12 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
   `skipped-from-wsl` / `available`）と起動中のディストロを返す。`available` なら、利用側が案内と y/N を出して
   `Update-WslPackage -Latest <版>` を呼ぶ（`updated` / `not-yet-available` / `failed` / `skipped-from-wsl`
   を返す）。更新は WSL の VM を止めるので、WSL から起動されているときは実行しない。GitHub で公開されて
-  から `wsl --update` で取れるまでずれることがあり、版が上がらなければ `not-yet-available` になる
+  から `wsl --update` で取れるまでずれることがあり、版が上がらなければ `not-yet-available` になる。
+  `.wslconfig` も扱う。無いと WSL が使えるメモリは物理メモリの半分になる。`Get-WslConfigRecommendation -TotalGB <GB> -Policy @{ ReserveMinGB; ReserveRatio; SwapMaxGB }`
+  が memory（物理メモリ − max(ReserveMinGB, 物理メモリ × ReserveRatio)）と swap（min(SwapMaxGB, memory / 2)）の
+  推奨値を計算し、`Get-WslConfigLines` がファイルの行を組み立てる。`Get-WslConfigStatus -Policy <同じ割合>` は
+  doctor 向けの状態（`missing` / `not-needed` / `no-section` / `ok`）と `[wsl2]` 節の memory / swap を返す。
+  値は PC ごとに違うので同期の対象にせず、作るかどうかの y/N と割合は利用側が持つ。既存のファイルは書き換えない
 - `store.ps1`: Microsoft Store の自動更新ポリシーの確認（`Test-StoreAutoUpdateDisabled`）と停止
   （`Disable-StoreAutoUpdate`、要管理者）。Store の自動更新は作業中の WSL を止めることがあるが、止めると
   WSL 以外の Store アプリも更新されなくなるので、booch-win からは呼ばない。止めるかどうかは利用側の

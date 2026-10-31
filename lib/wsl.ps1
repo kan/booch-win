@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 #
-# lib/wsl.ps1: 汎用機構 — WSL2 とディストロの導入、WSL 本体の版の確認と更新
+# lib/wsl.ps1: 汎用機構 — WSL2 とディストロの導入、WSL 本体の版の確認と更新、.wslconfig の推奨値と状態
 #
 # dotfiles-win.ps1 から dot-source される。どのディストロを入れるかは個人選択なので消費側の
 # config が持ち、ここは wsl.exe を叩く「やり方」だけを提供する。案内文言と y/N は状態を返して
@@ -13,6 +13,12 @@
 #   Install-WslDistro(Distro)      WSL2 + 指定ディストロを導入し、結果の状態文字列を返す
 #   Get-WslUpdateStatus(Repo)      WSL 本体の導入済みの版と最新版を比べ、更新の要否を返す
 #   Update-WslPackage(Latest)      wsl --update を実行し、結果の状態文字列を返す
+#   Get-WslConfigPath()            %USERPROFILE%\.wslconfig のパス
+#   Get-PhysicalMemoryGB()         物理メモリ (GB)。取れなければ $null
+#   Get-WslConfigRecommendation(TotalGB, Policy)  物理メモリと割合から .wslconfig の memory / swap の推奨値を計算する
+#   Get-WslConfigLines(Recommendation[, CreatedBy])  推奨値から .wslconfig の行を組み立てる (ASCII のみ)
+#   Read-WslConfigWsl2(Path)       .wslconfig の [wsl2] 節のキーを読む
+#   Get-WslConfigStatus(Policy[, Path])  .wslconfig の有無と memory / swap を doctor 向けの状態で返す
 
 # WSL ディストロ名の配列。-Running なら起動中のものだけ。wsl.exe は一覧を UTF-16 で出すため、
 # コンソールの出力エンコーディング次第で 1 文字ごとに null が挟まる。null を除いてから行に分ける。
@@ -131,4 +137,120 @@ function Update-WslPackage {
     $target = $Latest -as [version]
     if ($now -and $target -and $now -ge $target) { return 'updated' }
     return 'not-yet-available'
+}
+
+# --- .wslconfig ---------------------------------------------------------------
+# .wslconfig が無いと、WSL が使えるメモリは物理メモリの半分になる。値は PC ごとに違うので、
+# ここは推奨値の計算、行の組み立て、状態の判定だけを持つ。作るかどうかの y/N と案内、推奨値の
+# 割合 (Policy) は消費側が持つ。既存のファイルの中身は書き換えない (手で直した値を尊重するため)。
+
+# %USERPROFILE%\.wslconfig のパス。
+function Get-WslConfigPath {
+    return (Join-Path $env:USERPROFILE '.wslconfig')
+}
+
+# 物理メモリ (GB) を返す。取れなければ $null。
+function Get-PhysicalMemoryGB {
+    try {
+        $bytes = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory
+        return [double]$bytes / 1GB
+    } catch {
+        return $null
+    }
+}
+
+# .wslconfig の推奨値を計算する (副作用なし)。$Policy は @{ ReserveMinGB; ReserveRatio; SwapMaxGB }。
+#   Windows に残す量 = max(ReserveMinGB, 物理メモリ × ReserveRatio)
+#   memory          = 物理メモリ - Windows に残す量
+#   swap            = min(SwapMaxGB, memory の半分)
+# @{ ReserveMinGB = 6; ReserveRatio = 0.3; SwapMaxGB = 16 } なら、32GB 機は memory=21GB / swap=11GB
+# (memory の既定は約 15.8GB)。memory が既定 (物理メモリの半分) 以下になる小さい PC では、作ると
+# かえって減るので Beneficial = $false を返す (消費側は提案しない)。$Policy のキーが欠けていたら
+# throw する ($null が 0 として計算に入り、Windows に何も残さない値を返さないため)。
+function Get-WslConfigRecommendation {
+    param(
+        [Parameter(Mandatory)][double]$TotalGB,
+        [Parameter(Mandatory)][hashtable]$Policy
+    )
+    foreach ($key in 'ReserveMinGB', 'ReserveRatio', 'SwapMaxGB') {
+        if ($null -eq $Policy[$key]) { throw "Get-WslConfigRecommendation: Policy に $key がありません" }
+    }
+    $total = [math]::Floor($TotalGB)
+    $reserve = [math]::Max($Policy.ReserveMinGB, [math]::Ceiling($total * $Policy.ReserveRatio))
+    # 下限 2GB は書き込む値の最低限。提案するかどうかは下限を当てる前の値で決める
+    # (当てた後で比べると、Windows に残す量を割り込む小さい PC でも提案してしまう)。
+    $raw = $total - $reserve
+    $memory = [math]::Max(2, $raw)
+    $swap = [math]::Min($Policy.SwapMaxGB, [math]::Ceiling($memory / 2))
+    return [pscustomobject]@{
+        TotalGB    = $total
+        MemoryGB   = [int]$memory
+        SwapGB     = [int]$swap
+        DefaultGB  = [math]::Round($TotalGB / 2, 1)
+        Beneficial = ($raw -gt $TotalGB / 2)
+    }
+}
+
+# Get-WslConfigRecommendation の結果から .wslconfig の行を返す (表示は行のまま、書き込みは CRLF で
+# 連結する)。WSL のパーサーに余計な文字を読ませないよう ASCII だけで書く。$CreatedBy は先頭の
+# コメントに入れる作成元の名前 (ASCII で渡す)。
+function Get-WslConfigLines {
+    param(
+        [Parameter(Mandatory)]$Recommendation,
+        [string]$CreatedBy = 'booch-win'
+    )
+    $r = $Recommendation
+    return @(
+        "# Created by $CreatedBy (per-PC values; do not sync between PCs)."
+        "# Physical memory: $($r.TotalGB)GB. Apply changes with: wsl --shutdown"
+        '[wsl2]'
+        "memory=$($r.MemoryGB)GB"
+        "swap=$($r.SwapGB)GB"
+    )
+}
+
+# .wslconfig の [wsl2] 節のキーを読む (節の外や別の節の同名キーは WSL が使わないので拾わない)。
+# 戻り値: @{ HasSection = bool; Values = @{ key = value } }。キーは小文字にそろえる。
+function Read-WslConfigWsl2 {
+    param([Parameter(Mandatory)][string]$Path)
+    $values = @{}
+    $has = $false
+    $section = ''
+    foreach ($line in (Get-Content -LiteralPath $Path)) {
+        if ($line -match '^\s*\[([^\]]+)\]') {
+            $section = $Matches[1].Trim().ToLowerInvariant()
+            if ($section -eq 'wsl2') { $has = $true }
+        } elseif ($section -eq 'wsl2' -and $line -match '^\s*([A-Za-z0-9_.]+)\s*=\s*(\S+)') {
+            $values[$Matches[1].ToLowerInvariant()] = $Matches[2]
+        }
+    }
+    return @{ HasSection = $has; Values = $values }
+}
+
+# .wslconfig の状態を @{ State; Path; Memory; Swap; Recommendation } で返す。Memory / Swap は
+# [wsl2] 節の値で、書かれていなければ '' (WSL の既定が効く)。Recommendation はファイルが無いときの
+# Get-WslConfigRecommendation の結果で、物理メモリを取れないときとファイルがあるときは $null。
+# 消費側は doctor の行も、setup の提案 (missing のときに Recommendation から作る) もこの状態から出す。
+#   'missing'     ファイルが無い (メモリは物理メモリの半分。作ると増える、または物理メモリを取れない)
+#   'not-needed'  ファイルが無いが、この PC のメモリでは作っても既定より増えない
+#   'no-section'  ファイルはあるが [wsl2] 節が無い (memory / swap が効いていない)
+#   'ok'          [wsl2] 節がある
+function Get-WslConfigStatus {
+    param(
+        [Parameter(Mandatory)][hashtable]$Policy,
+        [string]$Path = (Get-WslConfigPath)
+    )
+    $s = [pscustomobject]@{ State = ''; Path = $Path; Memory = ''; Swap = ''; Recommendation = $null }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $total = Get-PhysicalMemoryGB
+        if ($total) { $s.Recommendation = Get-WslConfigRecommendation -TotalGB $total -Policy $Policy }
+        $s.State = if ($s.Recommendation -and -not $s.Recommendation.Beneficial) { 'not-needed' } else { 'missing' }
+        return $s
+    }
+    $cfg = Read-WslConfigWsl2 -Path $Path
+    if (-not $cfg.HasSection) { $s.State = 'no-section'; return $s }
+    if ($cfg.Values.ContainsKey('memory')) { $s.Memory = $cfg.Values['memory'] }
+    if ($cfg.Values.ContainsKey('swap')) { $s.Swap = $cfg.Values['swap'] }
+    $s.State = 'ok'
+    return $s
 }

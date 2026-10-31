@@ -213,3 +213,105 @@ Describe 'Update-WslPackage' {
         Update-WslPackage -Latest '3.0.4' | Should -Be 'failed'
     }
 }
+
+# .wslconfig の推奨値の計算、行の組み立て、状態の判定。実際の %USERPROFILE%\.wslconfig には触らない。
+Describe '.wslconfig' {
+    BeforeAll {
+        # 計算を固定の入力で確かめるための割合 (利用側の config の値を変えてもテストは変えない)。
+        $script:Policy = @{ ReserveMinGB = 6; ReserveRatio = 0.3; SwapMaxGB = 16 }
+    }
+    BeforeEach {
+        $script:CfgPath = Join-Path ([IO.Path]::GetTempPath()) ('wslconfig-test-' + [guid]::NewGuid().ToString('N'))
+    }
+    AfterEach { Remove-Item -LiteralPath $script:CfgPath -ErrorAction SilentlyContinue }
+
+    Context 'Get-WslConfigRecommendation' {
+        It '32GB 機（実測 31.6GB）は memory=21GB / swap=11GB' {
+            $r = Get-WslConfigRecommendation -TotalGB 31.6 -Policy $script:Policy
+            $r.MemoryGB | Should -Be 21
+            $r.SwapGB | Should -Be 11
+        }
+        It '16GB 機は Windows に最低 6GB を残す' {
+            $r = Get-WslConfigRecommendation -TotalGB 16 -Policy $script:Policy
+            $r.MemoryGB | Should -Be 10
+            $r.SwapGB | Should -Be 5
+        }
+        It '大きい機では swap が SwapMaxGB で頭打ちになる' {
+            $r = Get-WslConfigRecommendation -TotalGB 64 -Policy $script:Policy
+            $r.MemoryGB | Should -Be 44
+            $r.SwapGB | Should -Be 16
+        }
+        It '32GB 機と 16GB 機は作ると増えるので Beneficial' {
+            (Get-WslConfigRecommendation -TotalGB 31.6 -Policy $script:Policy).Beneficial | Should -BeTrue
+            (Get-WslConfigRecommendation -TotalGB 16 -Policy $script:Policy).Beneficial | Should -BeTrue
+        }
+        It '8GB 機は既定 (半分) より減るので Beneficial ではない' {
+            (Get-WslConfigRecommendation -TotalGB 7.8 -Policy $script:Policy).Beneficial | Should -BeFalse
+        }
+        It '下限 2GB を当てても、Windows に残す量を割り込む小さい PC は Beneficial ではない' {
+            (Get-WslConfigRecommendation -TotalGB 3 -Policy $script:Policy).Beneficial | Should -BeFalse
+        }
+        It 'Policy のキーが欠けていれば throw する' {
+            { Get-WslConfigRecommendation -TotalGB 16 -Policy @{ ReserveMinGB = 6; ReserveRatio = 0.3 } } | Should -Throw '*SwapMaxGB*'
+        }
+    }
+
+    Context 'Read-WslConfigWsl2' {
+        It '[wsl2] 節のキーだけを拾う' {
+            Set-Content -LiteralPath $script:CfgPath -Value @('[experimental]', 'swap=1GB', '[WSL2]', 'Memory = 21GB')
+            $c = Read-WslConfigWsl2 -Path $script:CfgPath
+            $c.HasSection | Should -BeTrue
+            $c.Values['memory'] | Should -Be '21GB'
+            $c.Values.ContainsKey('swap') | Should -BeFalse
+        }
+        It '[wsl2] 節が無ければ HasSection が false' {
+            Set-Content -LiteralPath $script:CfgPath -Value @('memory=21GB')
+            (Read-WslConfigWsl2 -Path $script:CfgPath).HasSection | Should -BeFalse
+        }
+    }
+
+    Context 'Get-WslConfigLines' {
+        It '[wsl2] 節に memory と swap を書き、ASCII だけで組む' {
+            $r = Get-WslConfigRecommendation -TotalGB 31.6 -Policy $script:Policy
+            $lines = Get-WslConfigLines -Recommendation $r
+            $lines | Should -Contain '[wsl2]'
+            $lines | Should -Contain 'memory=21GB'
+            $lines | Should -Contain 'swap=11GB'
+            ($lines -join "`n") | Should -Not -Match '[^\x00-\x7F]'
+        }
+        It '-CreatedBy を先頭のコメントに入れる' {
+            $r = Get-WslConfigRecommendation -TotalGB 31.6 -Policy $script:Policy
+            (Get-WslConfigLines -Recommendation $r -CreatedBy 'my-setup')[0] | Should -Match '^# Created by my-setup '
+        }
+    }
+
+    Context 'Get-WslConfigStatus' {
+        It 'ファイルが無く、作ると増える PC なら missing と推奨値を返す' {
+            Mock Get-PhysicalMemoryGB { 31.6 }
+            $s = Get-WslConfigStatus -Policy $script:Policy -Path $script:CfgPath
+            $s.State | Should -Be 'missing'
+            $s.Recommendation.MemoryGB | Should -Be 21
+        }
+        It 'ファイルが無く、物理メモリを取れなければ missing で推奨値は $null' {
+            Mock Get-PhysicalMemoryGB { $null }
+            $s = Get-WslConfigStatus -Policy $script:Policy -Path $script:CfgPath
+            $s.State | Should -Be 'missing'
+            $s.Recommendation | Should -BeNullOrEmpty
+        }
+        It 'ファイルが無く、作っても増えない PC なら not-needed' {
+            Mock Get-PhysicalMemoryGB { 7.8 }
+            (Get-WslConfigStatus -Policy $script:Policy -Path $script:CfgPath).State | Should -Be 'not-needed'
+        }
+        It '[wsl2] 節が無ければ no-section' {
+            Set-Content -LiteralPath $script:CfgPath -Value @('memory=21GB')
+            (Get-WslConfigStatus -Policy $script:Policy -Path $script:CfgPath).State | Should -Be 'no-section'
+        }
+        It '[wsl2] 節があれば ok と memory / swap を返す (書かれていないキーは空)' {
+            Set-Content -LiteralPath $script:CfgPath -Value @('[wsl2]', 'memory=21GB')
+            $s = Get-WslConfigStatus -Policy $script:Policy -Path $script:CfgPath
+            $s.State | Should -Be 'ok'
+            $s.Memory | Should -Be '21GB'
+            $s.Swap | Should -Be ''
+        }
+    }
+}
