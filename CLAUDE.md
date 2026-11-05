@@ -43,9 +43,9 @@ booch-win は Windows 向けの再実行可能な開発環境ブートストラ�
   `irm|iex` は版によって先頭 `param(...)` を解釈できず、「代入式が無効」等のエラーで止まるため（対象
   repo は鉄則 4 のとおり既定に埋め込まない）。副作用は seam 関数に切り出し、`BOOCH_WIN_NORUN=1` で
   main を抑止して Pester から dot-source 検証する。
-- `lib/*.ps1`: 汎用機構。winget / sync / cleanup / autoremove / download / doctor / git / go / rust /
-  npm / textlint がある。github / codex / claude / font / openvpn / system / keyboard / wsl / scaffold
-  もここに置く。ほかに取り込み補助の `bootstrap` と help 用の `apidoc` がある。利用側 dotfiles-win のエントリが
+- `lib/*.ps1`: 汎用機構。common / winget / sync / cleanup / autoremove / download / doctor / git / go / rust /
+  npm / textlint がある。github / ghext / codex / claude / font / openvpn / system / keyboard / wsl / store /
+  browser / scaffold もここに置く。ほかに取り込み補助の `bootstrap` と help 用の `apidoc` がある。利用側 dotfiles-win のエントリが
   `Get-BoochWinLibFile` の返す一覧を dot-source する。**個人選択（何を入れるか）は持たない**。
   それは利用側の config に置く。
 - `bin/booch-win.ps1`: 補助 CLI（`help` / `version` / `scaffold`）。`help` は `lib/apidoc.ps1`、

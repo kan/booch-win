@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### Added
+- `lib/ghext.ps1`: gh（GitHub CLI）の拡張を導入して最新に保つ `Install-GhExtensions` と、doctor 向けに
+  `Show-ToolList` へ渡す項目を返す `Get-GhExtensionDoctorTools` を足した。どの拡張を入れるか（owner/repo の一覧）は
+  利用側が渡す。更新は `gh extension install --force` で行う（未導入でも同じ 1 コマンドで済み、`--pin` で入れた
+  拡張も上げる。`--force` なしの `gh extension upgrade` は pin 付きを飛ばし、終了コード 0 で返す）。gh が github.com で
+  未認証なら飛ばす
+- `Show-ToolList` / `Test-ToolInstalled`（`lib/doctor.ps1`）: 項目に任意キー `Installed`（bool か、bool を返す
+  scriptblock）を足した。持っていれば PATH と winget の ID ではなくその値で導入を判定する
+
 ## [0.29.0] - 2026-10-31
 
 ### Added

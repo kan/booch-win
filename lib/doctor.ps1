@@ -41,18 +41,25 @@ function Get-VersionNote {
 # (ここは真偽値しか返さないため、区別は呼び出し側が持つ)。ID 集合の取得は呼び出し側の
 # 仕事 (Get-WingetInstalledIds を 1 回呼んで doctor 内で使い回す。ツールごとに winget を
 # 叩くと読み取り上限×個数かかる)。
+# Installed (bool か、bool を返す scriptblock) を持つツールは、PATH と winget ではなくその値で判定する。
+# PATH の実行ファイルでは導入を表せないもの (gh の拡張は gh 本体があっても未導入でありうる) 用。
+# scriptblock が例外を出したら未導入とみなす (1 つのツールで doctor 全体を落とさない)。
 function Test-ToolInstalled {
     param(
         [Parameter(Mandatory)]$Tool,
         [array]$WingetIds = @()
     )
+    if ($null -ne $Tool.Installed) {
+        if ($Tool.Installed -isnot [scriptblock]) { return [bool]$Tool.Installed }
+        try { return [bool](& $Tool.Installed) } catch { return $false }
+    }
     if ($Tool.Cmd -and (Test-Cmd $Tool.Cmd)) { return $true }
     # 空・未取得の集合では -contains が素直に $false を返す (＝PATH の判定だけが残る)。
     if ($Tool.WingetId) { return ($WingetIds -contains [string]$Tool.WingetId) }
     return $false
 }
 
-# ツール一覧 (@{ Label; Cmd; Ver; Latest; WingetId; Optional }) を順に判定し
+# ツール一覧 (@{ Label; Cmd; Ver; Latest; WingetId; Installed; Optional }) を順に判定し
 # Write-Status で表示する。
 # Ver は導入済みのときバージョン文字列を出すための scriptblock。1 つでも
 # 未導入なら $true を返す (呼び出し側の missing 集計に使う)。

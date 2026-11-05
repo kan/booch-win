@@ -78,6 +78,18 @@ Describe 'Test-ToolInstalled' {
         Test-ToolInstalled -Tool @{ Cmd = 'magick'; WingetId = 'Vendor.Magick' } -WingetIds @() |
             Should -BeTrue
     }
+
+    It 'Installed があれば PATH ではなくその結果で判定する (gh 本体があっても拡張は未導入でありうる)' {
+        Mock Test-Cmd { $true }
+        Test-ToolInstalled -Tool @{ Cmd = 'gh'; Installed = { $false } } | Should -BeFalse
+        Test-ToolInstalled -Tool @{ Installed = { $true } } | Should -BeTrue
+        Test-ToolInstalled -Tool @{ Cmd = 'gh'; Installed = $false } | Should -BeFalse
+        Test-ToolInstalled -Tool @{ Installed = $true } | Should -BeTrue
+    }
+
+    It 'Installed の scriptblock が例外を出したら未導入とみなす (doctor 全体を落とさない)' {
+        Test-ToolInstalled -Tool @{ Installed = { throw 'boom' } } | Should -BeFalse
+    }
 }
 
 Describe 'Show-ToolList' {

@@ -72,6 +72,15 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
 - `winget.ps1`: winget 呼び出し、PATH 操作、導入判定、追跡外監査、設定 (settings.json) のキー単位更新
 - `doctor.ps1`: doctor 表示フレーム（ツール一覧 / ディスク空き / WSL vhdx サイズ）
 - `download.ps1` / `github.ps1`: ダウンロードと GitHub Releases の取得
+- `ghext.ps1`: gh（GitHub CLI）の拡張の導入と診断。`Install-GhExtensions -Repos <owner/repo>...` が、未導入なら
+  入れ、導入済みなら最新へ上げる。使うのは `gh extension install --force` で、`--pin` で入れた拡張も上げる。
+  `--force` なしの `gh extension upgrade` は、pin 付きを終了コード 0 のまま飛ばす。gh が github.com で未認証なら
+  案内だけ出して飛ばす。doctor 向けの `Get-GhExtensionDoctorTools` は、拡張ごとに `Show-ToolList` へ渡せる項目を
+  返す。項目は現在版、最新版、`gh extension list` に載っているかの判定を持つ。最新版は認証済みの gh で引き、
+  引けなければ REST に戻す。版を比べられるのはリリースを持つ binary 拡張だけ。一覧から外した拡張は消さない
+- `doctor.ps1` の `Show-ToolList` に渡す項目は、任意キー `Installed` を持てる。値は bool か、bool を返す scriptblock。
+  持っていれば、PATH と winget の ID ではなくその値で導入を判定する。gh の拡張のように、PATH の実行ファイルでは
+  導入を表せないもの用。scriptblock が例外を出したら未導入とみなす
 - `go.ps1` / `rust.ps1` / `npm.ps1` / `textlint.ps1`: 言語ツール導入。Go 本体は winget を経由せず、
   go.dev の配布一覧にある zip をユーザー領域へ展開して入れる（`Install-Go [-InstallDir <dir>]`、既定は
   `%LOCALAPPDATA%\Programs\Go`）。winget の `GoLang.Go` は go.dev の MSI を指すだけで、掲載が検証待ちで
