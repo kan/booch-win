@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-05
+
 ### Added
 - `lib/ghext.ps1`: gh（GitHub CLI）の拡張を導入して最新に保つ `Install-GhExtensions` と、doctor 向けに
   `Show-ToolList` へ渡す項目を返す `Get-GhExtensionDoctorTools` を足した。どの拡張を入れるか（owner/repo の一覧）は
@@ -741,7 +743,8 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/kan/booch-win/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/kan/booch-win/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kan/booch-win/compare/v0.28.1...v0.29.0
 [0.28.1]: https://github.com/kan/booch-win/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/kan/booch-win/compare/v0.27.0...v0.28.0
