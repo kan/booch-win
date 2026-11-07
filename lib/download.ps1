@@ -21,7 +21,8 @@ function Invoke-Download {
 
     $curlExe = Join-Path $env:SystemRoot 'System32\curl.exe'
     if (Test-Path $curlExe) {
-        $curlArgs = @('-fsSL', '--retry', '3', '-o', $OutFile)
+        # リダイレクトで平文の http へ落ちることと、TLS の格下げを拒否する。
+        $curlArgs = @('--proto', '=https', '--tlsv1.2', '-fsSL', '--retry', '3', '-o', $OutFile)
         if ($TimeoutSec -gt 0) {
             $curlArgs += @('--max-time', "$TimeoutSec")
         }

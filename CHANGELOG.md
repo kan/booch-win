@@ -6,7 +6,14 @@
 
 ## [Unreleased]
 
+### Added
+- `lib/github.ps1`: リリースの資産に Releases API が付ける SHA-256 の digest を返す `Get-GitHubReleaseAssetDigest`
+  を足した（#20）。digest が無いときは空を返し、API の取得に失敗したときは throw する
+- `lib/github.ps1`: GitHub API を GET する `Invoke-GitHubApi` を足した（#20）。`Get-GitHubLatestRelease` と
+  `Get-GitHubReleaseAssetDigest` はこれを通す
+
 ### Changed
+- `Save-CodexInstaller` は `-Version`（x.y.z）を必須で受け取るようにした（#20）。その版のタグのインストーラーを取るため
 - GitHub Actions の版を workflow lockfile（`.github/workflows/actions.lock`）で commit に固定した。`uses:` は
   完全な版のタグ（`actions/checkout@v7.0.1`。これまでは `@v5`）で書き、実際に動く commit は lockfile が固定する。
   `verify-lockfile.yml` が PR と main への push で `gh actions-lock --verify` を回す。`.github/dependabot.yml` を
@@ -18,6 +25,16 @@
   `release-tag.yml` から、Release を作る `release.yml` へ移した
 - 変更は main へ直接 push せず、PR で入れる運用に変えた。tagpr はマージされた PR からリリース PR を組み立てる
   ため
+
+### Security
+- `Install-Codex` が公式インストーラー（`install.ps1`）を、入れる版のタグの GitHub Releases の資産から取り、
+  Releases API の digest で照合してから実行するようにした（#20）。これまでは `https://chatgpt.com/codex/install.ps1`
+  を照合せずに実行していた。digest を取れないときと、資産に digest が無いときも、実行せずに中断する。
+  `-Version` を省略したときは GitHub の最新タグのインストーラーを取り、インストーラーには今までどおり latest を
+  渡す。`install.ps1` を資産に持たない古い版や、資産に digest が付いていない古い版は、`-Version` で指定しても
+  入れられない。古い版の削除は残す（booch と違い、`install.ps1` は古い版を消さない）
+- `Invoke-Download` が curl.exe で取るときに `--proto =https --tlsv1.2` を付けるようにした（リダイレクトで平文の
+  http へ落ちることと、TLS の格下げを拒否する）。curl.exe が無く `Invoke-WebRequest` で取るときは今までどおり
 
 ## [0.30.0] - 2026-11-05
 

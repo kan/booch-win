@@ -2,8 +2,9 @@
 # lib/codex.ps1 の導入まわりを検証する (Pester 5)。install.ps1 の取得と実行は seam を
 # モックし、実際のインストーラーは走らせない。
 #
-# 見たいのは次の 4 点。
+# 見たいのは次の 5 点。
 # - インストーラーへ渡す版と、失敗の検出 (終了コード)
+# - install.ps1 を入れる版のタグの資産から取り、digest で照合できなければ実行しないこと
 # - 導入後に現セッションの PATH を組み直すこと (子プロセスの PATH 変更は親に届かない)
 # - 旧版と旧単一バイナリ (~\.local\bin\codex.exe) を消す条件。別物や使用中の版を巻き込まないこと
 # - 共有デーモンの版のずれの判定と、入れ替えの条件 (確認を省かない、昇格中は入れ替えない)
@@ -15,7 +16,11 @@ BeforeAll {
     . (Join-Path $lib 'winget.ps1')
     . (Join-Path $lib 'doctor.ps1')
     . (Join-Path $lib 'system.ps1')
+    . (Join-Path $lib 'download.ps1')
+    . (Join-Path $lib 'github.ps1')
     . (Join-Path $lib 'codex.ps1')
+    # エントリ側で定義される関数の代わり。
+    function Get-EffectiveTimeout { param($Sec) $Sec }
 
     # 見える bin dir をテストごとの一時ディレクトリへ向ける (実環境の codex を見ない)。
     # Pester 5 はファイル直下の BeforeEach を受け付けないので、使う Describe から呼ぶ。
@@ -30,6 +35,7 @@ Describe 'Install-Codex' {
     BeforeEach {
         $script:SavedTo = $null
         Mock Save-CodexInstaller { $script:SavedTo = $OutFile; Set-Content -LiteralPath $OutFile -Value '' }
+        Mock Get-CodexLatestVersion { '0.160.0' }
         Mock Invoke-CodexInstaller { 0 }
         Mock Update-SessionPath {}
         Mock Remove-LegacyCodexBinary { $false }
@@ -38,13 +44,24 @@ Describe 'Install-Codex' {
         Mock Write-Info {}
     }
 
-    It '版を省略すると latest を渡す' {
+    It '版を省略すると GitHub の最新タグの install.ps1 を取り、インストーラーには latest を渡す' {
         Install-Codex
+        Should -Invoke Get-CodexLatestVersion -Times 1 -Exactly -ParameterFilter { $Repo -eq 'openai/codex' }
+        Should -Invoke Save-CodexInstaller -Times 1 -Exactly -ParameterFilter { $Version -eq '0.160.0' }
         Should -Invoke Invoke-CodexInstaller -Times 1 -Exactly -ParameterFilter { $Release -eq 'latest' }
     }
 
-    It 'rust-v / v 接頭辞を外した版を渡し、取得した install.ps1 を実行する' {
+    It '最新タグを取れなければ install.ps1 を取らない' {
+        Mock Get-CodexLatestVersion { '' }
+        { Install-Codex } | Should -Throw '*最新タグ*'
+        Should -Invoke Save-CodexInstaller -Times 0 -Exactly
+        Should -Invoke Invoke-CodexInstaller -Times 0 -Exactly
+    }
+
+    It 'rust-v / v 接頭辞を外した版で install.ps1 を取り、その版を渡して実行する' {
         Install-Codex -Version 'rust-v0.154.0'
+        Should -Invoke Get-CodexLatestVersion -Times 0 -Exactly
+        Should -Invoke Save-CodexInstaller -Times 1 -Exactly -ParameterFilter { $Version -eq '0.154.0' }
         Should -Invoke Invoke-CodexInstaller -Times 1 -Exactly -ParameterFilter {
             $Release -eq '0.154.0' -and $ScriptPath -eq $script:SavedTo
         }
@@ -72,6 +89,101 @@ Describe 'Install-Codex' {
         Mock Save-CodexInstaller { throw 'download failed' }
         { Install-Codex } | Should -Throw '*download failed*'
         Should -Invoke Invoke-CodexInstaller -Times 0 -Exactly
+    }
+}
+
+Describe 'Save-CodexInstaller' {
+    BeforeEach {
+        $script:Body = "Write-Output installer`n"
+        $script:BodySha = [BitConverter]::ToString(
+            [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($script:Body))
+        ).Replace('-', '').ToLowerInvariant()
+        $script:Out = Join-Path $TestDrive ('install_' + [guid]::NewGuid().ToString('N') + '.ps1')
+        # 取得は固定の中身を書くだけにする (ネットワークに出ない)。
+        Mock Invoke-Download { [IO.File]::WriteAllText($OutFile, $script:Body) }
+    }
+
+    It '入れる版のタグの install.ps1 の digest を引き、同じタグの資産を取って照合が通る' {
+        Mock Get-GitHubReleaseAssetDigest { $script:BodySha }
+        Save-CodexInstaller -OutFile $script:Out -Version '0.160.0'
+        Should -Invoke Get-GitHubReleaseAssetDigest -Times 1 -Exactly -ParameterFilter {
+            $Repo -eq 'openai/codex' -and $Tag -eq 'rust-v0.160.0' -and $Name -eq 'install.ps1'
+        }
+        Should -Invoke Invoke-Download -Times 1 -Exactly -ParameterFilter {
+            $Uri -eq 'https://github.com/openai/codex/releases/download/rust-v0.160.0/install.ps1'
+        }
+        Test-Path -LiteralPath $script:Out | Should -BeTrue
+    }
+
+    It 'digest と一致しなければ throw し、取得したファイルを残さない' {
+        Mock Get-GitHubReleaseAssetDigest { '0' * 64 }
+        { Save-CodexInstaller -OutFile $script:Out -Version '0.160.0' } | Should -Throw '*一致しない*'
+        Test-Path -LiteralPath $script:Out | Should -BeFalse
+    }
+
+    # 取得したスクリプトをそのまま実行するので、digest が無いときも通さない。
+    It 'digest が無ければ取得せずに throw する' {
+        Mock Get-GitHubReleaseAssetDigest { '' }
+        { Save-CodexInstaller -OutFile $script:Out -Version '0.160.0' } | Should -Throw '*digest が無い*'
+        Should -Invoke Invoke-Download -Times 0 -Exactly
+    }
+
+    It '取得に失敗したら途中まで書かれたファイルを残さない' {
+        Mock Get-GitHubReleaseAssetDigest { $script:BodySha }
+        Mock Invoke-Download { [IO.File]::WriteAllText($OutFile, 'partial'); throw 'curl.exe failed (exit 28)' }
+        { Save-CodexInstaller -OutFile $script:Out -Version '0.160.0' } | Should -Throw '*exit 28*'
+        Test-Path -LiteralPath $script:Out | Should -BeFalse
+    }
+
+    It '版の形が不正なら API も取得も呼ばない' {
+        Mock Get-GitHubReleaseAssetDigest { $script:BodySha }
+        foreach ($v in @('latest', '0.160.0 ', '0.160.0/../x', '')) {
+            { Save-CodexInstaller -OutFile $script:Out -Version $v } | Should -Throw
+        }
+        Should -Invoke Get-GitHubReleaseAssetDigest -Times 0 -Exactly
+        Should -Invoke Invoke-Download -Times 0 -Exactly
+    }
+
+    It 'プレリリースの版は通す' {
+        Mock Get-GitHubReleaseAssetDigest { $script:BodySha }
+        Save-CodexInstaller -OutFile $script:Out -Version '0.168.0-alpha.1'
+        Should -Invoke Invoke-Download -Times 1 -Exactly -ParameterFilter { $Uri -like '*/rust-v0.168.0-alpha.1/install.ps1' }
+    }
+
+    It 'digest の取得に失敗したら取得せずに throw する' {
+        Mock Get-GitHubReleaseAssetDigest { throw 'api down' }
+        { Save-CodexInstaller -OutFile $script:Out -Version '0.160.0' } | Should -Throw '*digest を取得できない*'
+        Should -Invoke Invoke-Download -Times 0 -Exactly
+    }
+}
+
+Describe 'Get-GitHubReleaseAssetDigest' {
+    It '名前の一致する資産の sha256 digest を小文字の 16 進で返す' {
+        $hex = 'AB' * 32
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ assets = @(
+                    [pscustomobject]@{ name = 'install.sh'; digest = "sha256:$('cd' * 32)" },
+                    [pscustomobject]@{ name = 'install.ps1'; digest = "sha256:$hex" }
+                ) }
+        }
+        Get-GitHubReleaseAssetDigest -Repo 'openai/codex' -Tag 'rust-v0.1.0' -Name 'install.ps1' |
+            Should -Be $hex.ToLowerInvariant()
+        Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+            $Uri -eq 'https://api.github.com/repos/openai/codex/releases/tags/rust-v0.1.0'
+        }
+    }
+
+    It '資産が無い、または digest が無いときは空' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ assets = @([pscustomobject]@{ name = 'install.ps1'; digest = $null }) }
+        }
+        Get-GitHubReleaseAssetDigest -Repo 'o/r' -Tag 't' -Name 'install.ps1' | Should -Be ''
+        Get-GitHubReleaseAssetDigest -Repo 'o/r' -Tag 't' -Name 'other' | Should -Be ''
+    }
+
+    It 'API の取得に失敗したら throw する (digest が無いときと区別する)' {
+        Mock Invoke-RestMethod { throw 'not found' }
+        { Get-GitHubReleaseAssetDigest -Repo 'o/r' -Tag 't' -Name 'install.ps1' } | Should -Throw
     }
 }
 
