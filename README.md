@@ -11,7 +11,9 @@ which have no version file, use only the CHANGELOG part (`--changelog-only`). Th
 [pike](https://github.com/kan/pike) (`--cargo src-tauri`, with `package.json` too) also
 bring `Cargo.lock` along. The CPAN module
 [coveralls-perl](https://github.com/kan/coveralls-perl) (`--changelog-only`) keeps its
-version in a Perl module and `META.json`, and releases from `master`.
+version in a Perl module and `META.json`, and releases from `master`. The shell tools
+[booch](https://github.com/kan/booch) and [booch-win](https://github.com/kan/booch-win)
+(`--changelog-only`) keep their version in a `VERSION` file.
 
 | File | Run by | Does |
 |---|---|---|
@@ -221,8 +223,11 @@ jobs:
   - A label changed on a merged pull request (one listed in `minorLabels`, say) does not
     start it. Start `tagpr.yml` by hand then: `gh workflow run tagpr.yml`.
   - The rebuild queues behind a merge run like any other run. A label changed while a
-    merge run waits can replace that run (the same as a push); rerun the merge commit's
-    run to make the tag.
+    merge run waits can replace that run (the same as a push); the next run re-runs it to
+    make the tag (see "A missed tag is made by re-running the run of its merge").
+  - If the repository pins its actions with `actions.lock`, run `gh actions-lock` after
+    adding the file. It adds an empty entry for `tagpr-label.yml`; without it,
+    `gh actions-lock --verify` fails with "Not pinned".
 - **Keep Dependabot off the calling line.** Add this to the `github-actions` entry of
   `.github/dependabot.yml`:
 
@@ -260,7 +265,11 @@ jobs:
   tagpr, and so does a run while a release pull request is open and ready (it is rebuilt
   and turned into a draft), and a run started by `workflow_dispatch` (a rebuild asked for
   by hand or by `tagpr-label.yml`). If the check itself fails, tagpr is run, so a tag is never left
-  unmade for it.
+  unmade for it. A run with nothing to release closes every release pull request (label
+  `tagpr`, branch `tagpr-from-v`) that is open as a draft, with a comment, and keeps their
+  branches. Such a draft was left by a run that failed, or by a label change whose rebuild
+  has not run yet; either way there is nothing in it to release, and the next pull request
+  that writes `CHANGELOG.md` gets a new one.
 - **A successful run marks ready only the release pull request it rebuilt, and closes the
   others.** tagpr looks only at the branch `tagpr-from-v<latest tag>`, so once a tag is made,
   an older release pull request (say, the draft left behind when the run of a merge was
