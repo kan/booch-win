@@ -189,11 +189,13 @@ help がそのまま API doc になるよう、`lib/*.ps1` を足したり変え
 ## 開発・テスト
 
 - Tier1（自動、CI）: `tests/*.Tests.ps1`（Pester 5。winget / gh / git などをモックしてロジックを検証）と
-  PSScriptAnalyzer、構文 parse を GitHub Actions（`windows-latest`）で実行する。ローカルでは次のとおり:
+  PSScriptAnalyzer、構文 parse を GitHub Actions（`windows-latest`）で実行する。同じ CI で、
+  `scripts/tagpr/` が `tagpr.yml` の呼ぶ commit と一致するかも確かめる。ローカルでは次のとおり:
 
   ```powershell
   Invoke-Pester -Path ./tests
   $paths = @('./win.ps1') + @(Get-ChildItem ./lib, ./bin -Filter '*.ps1' | ForEach-Object FullName); foreach ($path in $paths) { Invoke-ScriptAnalyzer -Path $path -Settings ./PSScriptAnalyzerSettings.psd1 }
+  node scripts/tagpr/verify-subtree.mjs   # scripts/tagpr/ と tagpr.yml の SHA の一致（HEAD を見るので commit 後に回す）
   ```
 
 - Tier2（手動、実環境）: 実 winget、実認証、実 clone までのスモークは、使い捨ての
@@ -221,27 +223,46 @@ dotfiles-win.cmd}`、`README.md`、`CLAUDE.md`、`.gitattributes` の最小構�
 ## リリース
 
 バージョンの正本はルートの [`VERSION`](VERSION)（SemVer 1 行）。`booch-win version` と git タグ
-`v<...>` をこれに一致させる。リリースは GitHub Releases（タグ + ノート）で行い、配布は
+`v<...>` をこれに一致させる。各版はタグと GitHub Release（ノートは CHANGELOG の節）で示し、配布は
 clone / submodule（tarball は付けない）。**消費側（dotfiles-win）は submodule をリリースタグに
 pin する**（`vendor/booch-win` を新タグへ進めてコミット）。
 
-手順（バージョン bump は勝手に行わない。指示があってから）:
+リリースは [tagpr](https://github.com/Songmu/tagpr) で行う。処理は
+[kan/tagpr-scripts](https://github.com/kan/tagpr-scripts) の共通の workflow とスクリプトで、
+`scripts/tagpr/` に `git subtree` で取り込んでいる（設定はルートの `.tagpr`）。各段の挙動と、run が
+失敗したときの扱いの正本は tagpr-scripts の README「The tagpr workflow」。変更は PR で入れ、利用者に
+届く変更はその PR で `CHANGELOG.md` の `## [Unreleased]` に書く（CLAUDE.md「変更の入れ方（PR 運用）」）。
 
-1. `VERSION` を上げる（SemVer）。`booch-win version` が新版を返すことを確認。
-2. `CHANGELOG.md` の `[Unreleased]` を新バージョンの節へ繰り上げ、日付と比較リンクを付ける。
-3. 変更をコミット（日本語メッセージ。bump とノートを含む）。
-4. タグを打って push: `git tag -a v0.1.0 -m v0.1.0 && git push origin v0.1.0`。
-5. リリース作成: `gh release create v0.1.0 --title v0.1.0 --notes "<CHANGELOG の当該節>"`。
-6. 消費側の pin を更新（dotfiles の `vendor/booch-win` を新タグへ）。
+1. main へのマージのたびに `.github/workflows/tagpr.yml` がリリース PR を作り直す。`VERSION` と
+   CHANGELOG の版の節はリリース PR が書く。
+2. 版は既定で patch。`enhancement` の PR がマージされていれば minor。リリース PR に
+   `tagpr:minor` / `tagpr:major` を付けても上げられる（`tagpr-label.yml` がラベルの変化で
+   リリース PR を作り直す）。
+3. **リリース PR のマージがリリースの実行にあたる。バージョン bump と同じく、指示があってから
+   マージする**。tagpr の run が赤のリリース PR はマージしない。リリース PR は GITHUB_TOKEN で
+   作られるので `ci.yml` などの PR の CI は走らない（検査結果が付かないのは正常）。リリース PR が
+   変えるのは `VERSION` と `CHANGELOG.md` だけで、検査は tagpr の run と `release.yml` が担う。
+4. マージ後の run がタグを打ち、そのタグで `.github/workflows/release.yml` を起動する。
+   `release.yml` はタグを検査し（下記）、CHANGELOG の節を本文にして GitHub Release を作る。
+5. 消費側の pin を更新する（dotfiles の `vendor/booch-win` を新タグへ）。
 
-**タグは annotated（`-a`）で打つ**。`-a` 無しの lightweight タグは `git describe`（`--tags`
-無し）から無視される。そのため、消費側が `git submodule status` / `git describe` で pin 先を確認すると
-1 つ前のリリースが表示される。過去のタグは lightweight（`v0.1.0`〜`v0.5.1` / `v0.7.0`〜`v0.13.0`）と
-annotated が混在している。配布済みのタグを貼り直しても、手元に古いタグを持つ clone は fetch で
-更新されず種別が食い違うので、打ち直さずに今後のタグだけを揃える（過去版を pin して確認する側は
-`git describe --tags` を使えば混在の影響を受けない）。annotated であることと、`VERSION` がタグ名と
-一致することは、`v*` タグの push で `.github/workflows/release-tag.yml` が検査する。打ち間違えれば
-このワークフローが失敗する。
+プレリリース（`vX.Y.Z-rc.1`）は main に手で annotated のタグを打って push する。`release.yml` の
+`push: tags` が動き、本文は `## [Unreleased]` になる。`VERSION` は前の版のままにする（rc に
+書き換えると tagpr が版を書き換えられない）。`release.yml` はプレリリースのタグでは `VERSION` との
+一致を検査しない。
+
+**タグは annotated で打つ**。lightweight タグは `git describe`（`--tags` 無し）から無視される。
+そのため、消費側が `git submodule status` / `git describe` で pin 先を確認すると
+1 つ前のリリースが表示される。tagpr のタグは共通の workflow が annotated にする（tagpr-scripts の
+README「The tagpr workflow」）。手で打つタグは `git tag -a` で打つ。過去のタグは
+lightweight（`v0.1.0`〜`v0.5.1` / `v0.7.0`〜`v0.13.0`）と annotated が混在している。配布済みのタグを
+貼り直しても、手元に古いタグを持つ clone は fetch で更新されず種別が食い違うので、打ち直さずに
+今後のタグだけを揃える（過去版を pin して確認する側は `git describe --tags` を使えば混在の影響を
+受けない）。annotated であることと、`VERSION` がタグ名と一致することは、`release.yml` が Release を
+作る前に検査する。打ち間違えればこのワークフローが失敗し、Release も作られない。
+
+CHANGELOG の末尾のリンクは、v0.30.0 までが `compare/vA...vB`、以降が `releases/tag/vX.Y.Z`。
+過去の `compare/` のリンクは書き換えない（形が混ざっても読み取りに支障は無い）。
 
 ## 将来
 

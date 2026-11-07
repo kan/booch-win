@@ -11,6 +11,13 @@
   完全な版のタグ（`actions/checkout@v7.0.1`。これまでは `@v5`）で書き、実際に動く commit は lockfile が固定する。
   `verify-lockfile.yml` が PR と main への push で `gh actions-lock --verify` を回す。`.github/dependabot.yml` を
   足し、Actions の版を週次で追従する（`kan/tagpr-scripts*` は対象外）
+- リリースを [tagpr](https://github.com/Songmu/tagpr) に移した（#14）。main へのマージのたびにリリース PR
+  が作り直され、それをマージすると `VERSION` の更新、CHANGELOG の節の繰り上げ、annotated のタグ、GitHub
+  Release までが自動で進む。処理は [kan/tagpr-scripts](https://github.com/kan/tagpr-scripts) を
+  `scripts/tagpr/` に `git subtree` で取り込んで使う。タグの検査（annotated か、`VERSION` と一致するか）は
+  `release-tag.yml` から、Release を作る `release.yml` へ移した
+- 変更は main へ直接 push せず、PR で入れる運用に変えた。tagpr はマージされた PR からリリース PR を組み立てる
+  ため
 
 ## [0.30.0] - 2026-11-05
 
@@ -749,7 +756,6 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
-[Unreleased]: https://github.com/kan/booch-win/compare/v0.30.0...HEAD
 [0.30.0]: https://github.com/kan/booch-win/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kan/booch-win/compare/v0.28.1...v0.29.0
 [0.28.1]: https://github.com/kan/booch-win/compare/v0.28.0...v0.28.1

@@ -1,0 +1,17 @@
+# tagpr: main に向けたリリース PR を最新に保ち、マージされたらタグを打つ。
+# workflow は .github/workflows/tagpr.yml、手順は README「リリース」。
+[tagpr]
+	releaseBranch = main
+	vPrefix = true
+	# 版の正本はルートの VERSION（版の文字列だけ）。tagpr が書き換え、
+	# release-prepare.mjs が提案された版と一致するかを確かめる。
+	versionFile = VERSION
+	# CHANGELOG.md は "## [Unreleased]" に手で書く。scripts/tagpr/release-prepare.mjs が
+	# その節をリリースの節にする。scripts/tagpr/ は kan/tagpr-scripts の git subtree。
+	# npm の package を持たないので CHANGELOG の処理だけを使う。
+	changelog = false
+	postVersionCommand = node scripts/tagpr/release-prepare.mjs --changelog-only
+	# GitHub Release は release.yml が CHANGELOG の節を本文にして作る。
+	release = false
+	# enhancement の付いた PR がマージされていれば minor を上げる。
+	minorLabels = enhancement

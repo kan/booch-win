@@ -1,0 +1,21 @@
+name: tagpr-label
+
+# 開いているリリース PR のラベル（tagpr:minor / tagpr:major など）が変わったら、PR を draft に
+# して tagpr.yml を起動し、ラベルが求める版で作り直す。作り直す前にマージされると、ラベルを
+# 付ける前の版でリリースされてしまうため。詳細は tagpr-scripts の README
+# 「Rebuild the release pull request when its version label changes」。
+#
+# 共通の workflow は何も checkout しないので、pull_request_target でも PR のコードは動かない。
+on:
+  pull_request_target:
+    types: [labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  rebuild:
+    # tagpr.yml と同じ commit を呼ぶ（scripts/tagpr/ に取り込んだ commit）。
+    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@39b7027f32c2a7d4a62b8fa71a9546fc0ebed085
+    permissions:
+      actions: write        # tagpr.yml を起動する
+      pull-requests: write  # リリース PR を draft にする

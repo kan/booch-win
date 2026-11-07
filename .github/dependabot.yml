@@ -17,7 +17,6 @@ updates:
       prefix: "ci"
     open-pull-requests-limit: 5
     ignore:
-      # リリースを tagpr に移すとき（#14）に、tagpr.yml が kan/tagpr-scripts の共通の workflow を
-      # 呼ぶ。その SHA は scripts/tagpr/ の subtree と揃える。subtree pull と同じ PR でだけ上げ、
-      # Dependabot には上げさせない（tagpr-scripts の README「The tagpr workflow」）
+      # tagpr.yml / tagpr-label.yml の uses: は scripts/tagpr/ と一緒に git subtree pull で上げる。
+      # SHA だけを上げる PR は、動く workflow から scripts/tagpr/ を置き去りにする
       - dependency-name: "kan/tagpr-scripts*"
