@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-07
+
 ### Added
 - `lib/github.ps1`: リリースの資産に Releases API が付ける SHA-256 の digest を返す `Get-GitHubReleaseAssetDigest`
   を足した（#20）。digest が無いときは空を返し、API の取得に失敗したときは throw する
@@ -773,6 +775,7 @@
 - Tier1 CI（Pester モックテスト + PSScriptAnalyzer + 構文 parse、`windows-latest`）と
   Tier2 手動スモーク手順（Windows Sandbox）。
 
+[0.31.0]: https://github.com/kan/booch-win/releases/tag/v0.31.0
 [0.30.0]: https://github.com/kan/booch-win/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kan/booch-win/compare/v0.28.1...v0.29.0
 [0.28.1]: https://github.com/kan/booch-win/compare/v0.28.0...v0.28.1
