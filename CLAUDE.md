@@ -65,6 +65,25 @@ Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1 
 - 実 winget、実認証、実 clone までの実地スモークは使い捨ての near-clean な Windows で行う
   （`tests/sandbox/manual-smoke.md`）。ホスト型 CI では不可能なのでそこを手動の正とする。
 
+## CI のワークフロー
+
+- **ワークフローの actions は `.github/workflows/actions.lock`（workflow lockfile）で commit に固定し、
+  Dependabot が追従する**（`.github/dependabot.yml`、github-actions エコシステム）。lockfile の生成と更新は
+  GitHub CLI の拡張 `gh actions-lock`（`gh extension install github/gh-actions-lock`）で行い、**手で編集しない**。
+  - **`uses:` には SHA を書かず、完全な版のタグ（`@v7.0.1`）で書く**。commit の SHA は lockfile が持つ。
+    SHA や可動タグ（`@v5`）で書いても、`gh actions-lock` が生成時に完全な版のタグへ書き換える（`@v5` なら
+    v5 系の最新に固定されるので、上げたい版があれば先に `uses:` を書き換えてから流す）。
+  - **`uses:` を足す・消す・変える、またはワークフローを足したら `gh actions-lock` を流し直し、lockfile も
+    同じコミットに入れる**。載っていない参照があると、そのワークフローはジョブが始まる前に startup_failure で
+    止まる。コミット前の確認は `gh actions-lock --verify`（書き込まずに検査する。ネットワークに出る）。CI でも
+    `verify-lockfile.yml` が PR と main への push のたびに同じ検査を回す（拡張の版は `--pin` で固定してあり、
+    Dependabot は上げない。lockfile の形式が上がって落ちたら、手元の拡張と同じ版に上げる）。
+  - 版の更新は Dependabot が lockfile ごと PR で運ぶ（github-actions の更新 PR が該当エントリも作り直す）。
+  - `kan/tagpr-scripts*` は Dependabot の `ignore` に入れてある。リリースを tagpr に移すとき（#14）に取り込む
+    共通 workflow の SHA は、subtree と同じ PR でだけ上げるため。
+- `ci.yml`（PowerShell の解析と Pester）は `windows-latest` で動かす。OS に依存しない検査
+  （`release-tag.yml` は git とテキスト比較、`verify-lockfile.yml` は gh の拡張）は `ubuntu-latest` でよい。
+
 ## ドキュメントの保守
 
 API、構成、前提を変えたら **README.md も更新する**。使い方の正本は README、拡張ルールの正本は

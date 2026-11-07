@@ -1,0 +1,23 @@
+# Dependabot のバージョン更新設定。
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# booch-win は package manifest（package.json / go.mod 等）を持たない PowerShell 製のため、依存
+# パッケージ用エコシステム（nuget / npm 等）は対象外。CI のワークフローが使う GitHub Actions のみ
+# 追従する。版の更新 PR は .github/workflows/actions.lock の該当エントリも作り直す。
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "ci"
+    open-pull-requests-limit: 5
+    ignore:
+      # リリースを tagpr に移すとき（#14）に、tagpr.yml が kan/tagpr-scripts の共通の workflow を
+      # 呼ぶ。その SHA は scripts/tagpr/ の subtree と揃える。subtree pull と同じ PR でだけ上げ、
+      # Dependabot には上げさせない（tagpr-scripts の README「The tagpr workflow」）
+      - dependency-name: "kan/tagpr-scripts*"
