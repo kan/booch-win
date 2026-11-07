@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# GITHUB_TOKEN を最小権限に絞る（CI はチェックアウトと検査のみで書き込み不要）。
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: windows-latest
@@ -46,3 +50,22 @@ jobs:
           $cfg.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $cfg
 
+  # scripts/tagpr/（kan/tagpr-scripts の git subtree）と、tagpr.yml / tagpr-label.yml が呼ぶ
+  # 共通の workflow の SHA が揃っているかを確かめる。subtree pull で SHA を上げ忘れた、SHA だけを
+  # 上げた、scripts/tagpr/ を手で編集した、のどれでも落ちる。詳細は tagpr-scripts の README
+  # 「The tagpr workflow」。
+  tagpr-subtree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # booch-win 本体は Node を使わない。tagpr-scripts のテストと postVersionCommand と同じ 24 に揃える。
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+
+      - name: scripts/tagpr/ が tagpr workflow の SHA と一致するか
+        run: node scripts/tagpr/verify-subtree.mjs

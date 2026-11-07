@@ -1,0 +1,122 @@
+name: Release
+
+# リリースタグ（v*）を検査し、CHANGELOG の節を本文にして GitHub Release を作る。
+#
+# tagpr.yml が、push したタグで workflow_dispatch で起動する（GITHUB_TOKEN で push したタグは
+# push: tags を起動しない）。push: tags は手で打ったタグ（プレリリースなど）のため。
+# どちらでも github.ref はタグ。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# 権限はジョブごとに書く。
+permissions:
+  contents: read
+
+# タグごとに 1 run。Release を作っている途中で止めないよう、取り消さない。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # タグが満たすべき前提（annotated であること、VERSION と一致すること）を検査する。
+  # 書き込み権限は持たない。前提の理由は README「リリース」。
+  check:
+    # workflow_dispatch はブランチでも起動できるが、リリースはタグだけ。publish はこの
+    # ジョブに依存するので、この条件が両方を守る。
+    if: startsWith(github.ref, 'refs/tags/v')
+    # 検査が git とテキスト比較と Node だけで OS に依存しないため、ci.yml の windows-latest
+    # （PowerShell の解析と Pester に要る）と違って ubuntu で足りる。
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # 実際に動く commit は .github/workflows/actions.lock が固定する（タグ付け替えを防ぐ）。
+      # uses: を変えたら gh actions-lock を流し直す。版の更新は Dependabot が lockfile ごと PR で運ぶ。
+      # VERSION と CHANGELOG を読むためだけなので浅い clone でよい（タグの種別はここでは取れない。下記）。
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # ランナー同梱の Node は版がイメージ次第なので、tagpr-scripts のテストと同じ 24 に揃える。
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+
+      # checkout の版によっては、ローカルの refs/tags/<名前> が annotated タグでもコミットを
+      # 直接指す（経緯は CHANGELOG の 0.23.x）。版に依存しないよう、種別を見る前にタグ ref を
+      # 取り直す。persist-credentials: false でも、公開 repo なので認証なしで取れる。
+      #
+      # $GITHUB_REF_NAME は Actions が渡す環境変数。${{ }} で式を run へ展開すると
+      # タグ名経由のスクリプト注入を許すため、環境変数のまま参照する。
+      - name: タグが annotated か
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          type=$(git cat-file -t "$GITHUB_REF_NAME")
+          if [ "$type" != tag ]; then
+            echo "::error::$GITHUB_REF_NAME は lightweight タグ（$type）。annotated で打ち直す: git tag -f -a $GITHUB_REF_NAME -m $GITHUB_REF_NAME '$GITHUB_REF_NAME^{commit}' && git push -f origin $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME: annotated"
+
+      # プレリリース（v0.31.0-rc.1）は main に手で打つ。main の VERSION は前の版のままで、
+      # VERSION を rc にすると tagpr が版を書き換えられなくなるので、比べない。プレリリースの
+      # 判定は release-notes.mjs と同じ形にする（形の崩れたタグは下の VERSION の照合で落ちる）。
+      - name: VERSION がタグ名と一致するか
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            echo "::notice::$GITHUB_REF_NAME はプレリリース。VERSION ($(cat VERSION)) とは比べない"
+            exit 0
+          fi
+          want="${GITHUB_REF_NAME#v}"
+          have=$(cat VERSION)
+          if [ "$want" != "$have" ]; then
+            echo "::error::VERSION ($have) がタグ ($GITHUB_REF_NAME) と一致しない。どちらかを直す"
+            exit 1
+          fi
+          echo "VERSION: $have"
+
+      # publish はこの節から本文を作る。節が無ければここで止める。
+      - name: CHANGELOG の節があるか
+        run: node scripts/tagpr/release-notes.mjs "$GITHUB_REF_NAME" > /dev/null
+
+  # 検査を通ったタグで Release を作る。書き込み権限はこのジョブだけが持つ。
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write  # Release を作る
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # scripts/tagpr/release-notes.mjs と CHANGELOG.md のため
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+
+      # 本文は CHANGELOG.md の当該版の節（プレリリースなら Unreleased）。小見出し
+      # （### Added など）もそのまま入る。check を通ったタグで - を含むのはプレリリースだけ。
+      #
+      # 同じタグで 2 回起動されることがある（手で push したタグの push: tags と、tagpr の run の
+      # 再実行による workflow_dispatch）。Release が既にあれば作らずに緑で終える。
+      - name: Release を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "::notice::$GITHUB_REF_NAME の Release は既にある。作らない"
+            exit 0
+          fi
+          notes="$RUNNER_TEMP/release-notes.md"
+          node scripts/tagpr/release-notes.mjs "$GITHUB_REF_NAME" > "$notes"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease="$PRERELEASE" \
+            --title "$GITHUB_REF_NAME" --notes-file "$notes"

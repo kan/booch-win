@@ -32,7 +32,8 @@ booch-win は Windows 向けの再実行可能な開発環境ブートストラ�
      環境変数 `BOOCH_WIN_REPO`）で、既定に埋め込まない。例示が要るときは中立の
      プレースホルダ（`youraccount/dotfiles` / `<owner>/<name>`）を使う。issue 参照も個人 dotfiles
      リポジトリ（`kan/dotfiles#N`）へリンクしない。
-5. **コミットとバージョン bump を勝手にやらない**。コミットメッセージは日本語。
+5. **コミットとバージョン bump を勝手にやらない**。コミットメッセージは日本語。bump はリリース PR が行うので、
+   **リリース PR のマージも bump と同じくユーザーの指示があってから**行う（README「リリース」）。
 
 ## 構成
 
@@ -52,13 +53,16 @@ booch-win は Windows 向けの再実行可能な開発環境ブートストラ�
   `scaffold` は `lib/scaffold.ps1` に委譲。
 - `templates/`: 利用側 dotfiles-win の雛形（`scaffold`）。生成物に個人固有値を埋め込まず
   プレースホルダで示す。
-- `VERSION`: SemVer 1 行（`version` と git タグ `v<...>` を一致させる）。
+- `VERSION`: SemVer 1 行（`version` と git タグ `v<...>` を一致させる）。リリース PR が上げる。
+- `scripts/tagpr/`: リリースの処理（kan/tagpr-scripts の git subtree）。`.mjs` だけで `.ps1` を含まないので、
+  構文 parse と PSScriptAnalyzer の対象（`win.ps1` / `lib` / `bin`）には入れない。設定はルートの `.tagpr`。
 
 ## 動作確認
 
 ```powershell
 Invoke-Pester -Path ./tests -Output Detailed                 # ユニットテスト（Pester 5）
 Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1   # 対象ごとに lint
+node scripts/tagpr/verify-subtree.mjs                        # scripts/tagpr/ と tagpr.yml の SHA の一致（HEAD を見るので commit 後に回す）
 ```
 
 - ネットワーク / winget / gh / git を伴う処理は seam に切り出し、スタブで分岐を純粋に検証する。
@@ -73,16 +77,44 @@ Invoke-ScriptAnalyzer -Path ./win.ps1 -Settings ./PSScriptAnalyzerSettings.psd1 
   - **`uses:` には SHA を書かず、完全な版のタグ（`@v7.0.1`）で書く**。commit の SHA は lockfile が持つ。
     SHA や可動タグ（`@v5`）で書いても、`gh actions-lock` が生成時に完全な版のタグへ書き換える（`@v5` なら
     v5 系の最新に固定されるので、上げたい版があれば先に `uses:` を書き換えてから流す）。
+    **例外は `tagpr.yml` / `tagpr-label.yml` の `uses: kan/tagpr-scripts/...@<SHA>`**。別の repo の reusable
+    workflow を呼ぶ行は lockfile では固定されない（`actions.lock` では `[]`）ので、commit の SHA で書く。
+    タグへ書き換えない（下記「scripts/tagpr の更新」）。
   - **`uses:` を足す・消す・変える、またはワークフローを足したら `gh actions-lock` を流し直し、lockfile も
     同じコミットに入れる**。載っていない参照があると、そのワークフローはジョブが始まる前に startup_failure で
     止まる。コミット前の確認は `gh actions-lock --verify`（書き込まずに検査する。ネットワークに出る）。CI でも
     `verify-lockfile.yml` が PR と main への push のたびに同じ検査を回す（拡張の版は `--pin` で固定してあり、
     Dependabot は上げない。lockfile の形式が上がって落ちたら、手元の拡張と同じ版に上げる）。
   - 版の更新は Dependabot が lockfile ごと PR で運ぶ（github-actions の更新 PR が該当エントリも作り直す）。
-  - `kan/tagpr-scripts*` は Dependabot の `ignore` に入れてある。リリースを tagpr に移すとき（#14）に取り込む
-    共通 workflow の SHA は、subtree と同じ PR でだけ上げるため。
-- `ci.yml`（PowerShell の解析と Pester）は `windows-latest` で動かす。OS に依存しない検査
-  （`release-tag.yml` は git とテキスト比較、`verify-lockfile.yml` は gh の拡張）は `ubuntu-latest` でよい。
+  - `kan/tagpr-scripts*` は Dependabot の `ignore` に入れてある。`tagpr.yml` / `tagpr-label.yml` の SHA は
+    subtree と同じ PR でだけ上げるため（下記「scripts/tagpr の更新」）。
+- `ci.yml` の `lint-and-test`（PowerShell の解析と Pester）は `windows-latest` で動かす。OS に依存しない検査
+  （`ci.yml` の `tagpr-subtree` と `release.yml` は git と Node、`verify-lockfile.yml` は gh の拡張）は
+  `ubuntu-latest` でよい。
+
+## 変更の入れ方（PR 運用）
+
+**変更は main へ直接 push せず、ブランチを切って PR で入れる**（ルートに `.tagpr` がある）。
+tagpr はマージされた PR からリリース PR を組み立てるので、main へ直接 push した変更はリリースの
+組み立てから漏れる。ブランチの push、PR の作成、マージはユーザーの承認を得てから行う。
+
+- **利用者に届く変更は、その PR で `CHANGELOG.md` の `## [Unreleased]` に行を足す**。この節が
+  そのまま Release の本文になる。節の中は小見出し（`### Added` / `### Changed` / `### Fixed` など）で
+  分ける。書式の制約は tagpr-scripts の README「What the CHANGELOG has to look like」を正本にする
+  （節の中のリンクはインラインで書く、参照リンクを使わない、`[Unreleased]` の compare リンクを置かない、など）。
+- **機能の追加（minor を上げる変更）は、その PR に `enhancement` ラベルを付ける**
+  （`.tagpr` の `minorLabels`）。付けなければ tagpr は patch を提案する。
+- **`VERSION` と CHANGELOG の版の節は手で書かない**。リリース PR で tagpr と
+  `scripts/tagpr/release-prepare.mjs` が書く。
+
+## scripts/tagpr の更新
+
+- **`scripts/tagpr/` を手で編集しない**。変更は kan/tagpr-scripts で行い、`git subtree pull -S` で
+  取り込む。手順の正本は tagpr-scripts の README「Changing it」。
+- **取り込んだ PR で、`tagpr.yml` と `tagpr-label.yml` の `uses: kan/tagpr-scripts/...@<SHA>` を
+  取り込んだ commit へ上げる**。CI の `tagpr-subtree` ジョブ（`verify-subtree.mjs`）が食い違いで落ちる。
+  Dependabot はこの行を上げない（`dependabot.yml` の `ignore`）。
+- **subtree を取り込んだ PR はマージコミットでマージする（squash しない）**。理由は tagpr-scripts の README「Changing it」。
 
 ## ドキュメントの保守
 

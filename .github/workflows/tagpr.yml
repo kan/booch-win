@@ -1,0 +1,30 @@
+name: tagpr
+
+# リリース PR を最新に保ち、マージされたらリリースを始める。設定は .tagpr、手順は
+# README「リリース」。
+#
+# 中身は kan/tagpr-scripts の共通の workflow（写しは scripts/tagpr/.github/workflows/tagpr.yml）。
+# 何をするか、入力、run が失敗したときの扱いは tagpr-scripts の README「The tagpr workflow」にある。
+# workflow_dispatch は tagpr-label.yml と手での作り直しに使う。名前と trigger を変えない。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# concurrency は置かない（tagpr-scripts の README「The tagpr workflow」）。
+jobs:
+  tagpr:
+    # SHA は scripts/tagpr/ に取り込んだ tagpr-scripts の commit。git subtree pull をする
+    # PR で一緒に上げる（CLAUDE.md「scripts/tagpr の更新」）。
+    uses: kan/tagpr-scripts/.github/workflows/tagpr.yml@39b7027f32c2a7d4a62b8fa71a9546fc0ebed085
+    # 共通の workflow が得る権限の上限。4 つとも書く。
+    permissions:
+      contents: write       # リリースのブランチとタグを push する
+      pull-requests: write  # リリース PR を作り、更新する
+      issues: read          # ラベルを読む
+      actions: write        # release.yml を workflow_dispatch で起動する
+    with:
+      release-workflow: release.yml
