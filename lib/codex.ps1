@@ -11,12 +11,21 @@
 # インストーラーはそれらをパッケージごと %CODEX_HOME%\packages\standalone へ展開し
 # (SHA256 検証つき)、見える bin dir (既定 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin) を
 # junction で張り、User PATH に足す。
-# 依存: Invoke-Download / Get-EffectiveTimeout (lib/download.ps1)、Update-SessionPath
-# (lib/winget.ps1)、Get-VersionNumber (lib/doctor.ps1)、Test-IsElevated (lib/system.ps1)。
+#
+# **install.ps1 は、入れる版のタグ (rust-v<版>) の GitHub Releases の資産から取り、Releases API の
+# digest で照合してから実行する**。転送中の改ざんは検出できるが、上流のアカウント侵害は検出
+# できない。取得したスクリプトをそのまま実行するので、digest が無いときも中断する。
+# chatgpt.com/codex/install.ps1 も同じ中身を配っているが、こちらは照合する値が無い。
+# インストーラーを使わず資産を直接配置する方式は採らない: インストーラーは排他ロック、展開後の
+# 検査、codex 本体の自動更新と共有する記録 (selection-history / auto-update-version) まで持っており、
+# 写すと上流の変更に追従し損ねたときに codex 本体と食い違う (kan/booch#25 と同じ判断)。
+# 依存: Invoke-Download / Get-EffectiveTimeout (lib/download.ps1)、Get-GitHubReleaseAssetDigest /
+# Get-GitHubLatestReleaseTag (lib/github.ps1)、Update-SessionPath (lib/winget.ps1)、
+# Get-VersionNumber (lib/doctor.ps1)、Test-IsElevated (lib/system.ps1)。
 # entry が全 lib をまとめて dot-source する。
 #
 # テスト用の継ぎ目 (seam):
-#   Save-CodexInstaller        install.ps1 の取得 (ネットワーク)
+#   Save-CodexInstaller        install.ps1 の取得と照合 (ネットワーク)
 #   Invoke-CodexInstaller      install.ps1 を子プロセスで実行し終了コードを返す
 #   Get-CodexVersionOutput     指定した codex.exe の --version 出力
 #   Invoke-CodexDaemonCommand  codex.exe の app-server daemon <Command> の標準出力
@@ -52,8 +61,10 @@ function Get-CodexCurrentReleaseName {
 }
 
 # current と $Keep (直前の版の名前) 以外の版ディレクトリを削除する。インストーラーは古い版を
-# 消さない (1 版あたり数百 MB)。直前の版を残すのは、更新前から動いている codex のセッションが
-# 自分の版の付随ファイルを使い続けるため。比較は名前で行う (パスの表記揺れで current を消さない)。
+# 消さない (1 版あたり数百 MB)。booch はこの削除をやめてインストーラーに任せたが、それは
+# install.sh が古い版を自分で消すからで、install.ps1 は消さない (0.167.0 で確認)。
+# 直前の版を残すのは、更新前から動いている codex のセッションが自分の版の付随ファイルを
+# 使い続けるため。比較は名前で行う (パスの表記揺れで current を消さない)。
 # 作業中の .staging.* はインストーラー自身が掃除するので触らない。
 # 使用中の版は残す。Remove-Item -Recurse は消せるファイルから消していき、実行中の exe で止まるので、
 # そのまま消すと付随ファイルだけが消えた壊れた版が残る。そこで 2 段に分ける。(1) 古い版の
@@ -89,10 +100,39 @@ function Get-LegacyCodexPath {
     return (Join-Path $HOME '.local\bin\codex.exe')
 }
 
+# 版 $Version (x.y.z) のタグの install.ps1 を $OutFile へ取り、digest で照合する。照合できない
+# (API の失敗、digest が無い) とき、取得に失敗したとき、一致しないときは throw し、取得した
+# ファイルを残さない。install.ps1 を資産に持たない古い版や、digest の付いていない古い版は取れない。
 function Save-CodexInstaller {
-    param([Parameter(Mandatory)][string]$OutFile)
-    Invoke-Download -Uri 'https://chatgpt.com/codex/install.ps1' -OutFile $OutFile `
-        -TimeoutSec (Get-EffectiveTimeout $Script:JobTimeoutSec)
+    param(
+        [Parameter(Mandatory)][string]$OutFile,
+        [Parameter(Mandatory)][string]$Version
+    )
+    # 版はタグと URL の組み立てに使うので、形を確かめてから使う (プレリリースの -alpha.1 等は通す)。
+    if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') {
+        throw "codex: 版の形が不正 ('$Version')。x.y.z を渡す"
+    }
+    $tag = "rust-v$Version"
+    try {
+        $want = Get-GitHubReleaseAssetDigest -Repo 'openai/codex' -Tag $tag -Name 'install.ps1'
+    } catch {
+        throw "codex: $tag の install.ps1 の digest を取得できないため、照合できず中断する: $_"
+    }
+    if (-not $want) {
+        throw "codex: $tag の install.ps1 に digest が無いため、照合できず中断する"
+    }
+    try {
+        Invoke-Download -Uri "https://github.com/openai/codex/releases/download/$tag/install.ps1" -OutFile $OutFile `
+            -TimeoutSec (Get-EffectiveTimeout $Script:JobTimeoutSec)
+        $actual = (Get-FileHash -LiteralPath $OutFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $want) {
+            throw "codex: $tag の install.ps1 が digest と一致しない (want $want, got $actual)"
+        }
+    } catch {
+        # 途中まで書かれたファイルや照合に通らなかったファイルを残さない。
+        Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+        throw
+    }
 }
 
 # install.ps1 を子プロセスで実行し、終了コードを返す。
@@ -170,18 +210,28 @@ function Clear-LegacyCodexBinary {
 # Codex CLI を公式インストーラーで導入 / 更新する。$Version は x.y.z (rust-v / v 接頭辞可)
 # か latest。インストーラーの latest は releases.openai.com で決まり、Get-CodexLatestVersion
 # (GitHub) とずれることがあるので、版を比べてから入れる利用側はその版を渡す。
+# install.ps1 は入れる版のタグから取る。latest のときは GitHub の最新タグのものを取り、
+# インストーラーには latest を渡す (インストーラーは latest のときだけ auto-update-version を
+# 書き、版を指定すると消すので、その動きを変えない)。
 # 導入後は現セッションの PATH をレジストリから組み直し (インストーラーが User PATH に足した
 # bin dir を、同じセッションの版の確認や doctor から見えるようにする)、直前の版より古い版と
 # 旧単一バイナリを消す。
 function Install-Codex {
     param([string]$Version = 'latest')
     $release = if ([string]::IsNullOrWhiteSpace($Version)) { 'latest' } else { ConvertTo-CodexVersion $Version }
+    $installerVersion = $release
+    if ($release -eq 'latest') {
+        $installerVersion = Get-CodexLatestVersion -Repo 'openai/codex'
+        if (-not $installerVersion) {
+            throw 'codex: GitHub の最新タグを取得できないため、install.ps1 を取れない'
+        }
+    }
     $previous = Get-CodexCurrentReleaseName
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ('codex-installer-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
     try {
         $installer = Join-Path $tmpDir 'install.ps1'
-        Save-CodexInstaller -OutFile $installer
+        Save-CodexInstaller -OutFile $installer -Version $installerVersion
         $code = Invoke-CodexInstaller -ScriptPath $installer -Release $release
         if ($code -ne 0) {
             throw "Codex installer failed (exit $code)"

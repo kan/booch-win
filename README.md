@@ -96,13 +96,19 @@ irm https://raw.githubusercontent.com/kan/booch-win/main/win.ps1 | iex
   doctor の更新有無表示には `Get-GoInstalledVersion` / `Get-GoLatestVersion` を、MSI 版の残存の確認には
   `Get-GoMsiProduct` を使える
 - `codex.ps1` / `claude.ps1`: AI 開発ツールの導入と設定補助。Codex CLI は公式インストーラー
-  （`install.ps1`）を子プロセスで実行して入れる（`Install-Codex [-Version <x.y.z>]`）。codex.exe 単体では
+  （`install.ps1`）を子プロセスで実行して入れる（`Install-Codex [-Version <x.y.z>]`）。`install.ps1` は入れる版の
+  タグ（`rust-v<版>`）の GitHub Releases の資産から取り、Releases API の digest（`Get-GitHubReleaseAssetDigest`）で
+  照合してから実行する。digest を取れないとき、資産に digest が無いとき、一致しないときは実行せずに止まる
+  （転送中の改ざんは検出できるが、上流のアカウント侵害は検出できない）。そのため、`install.ps1` を資産に持たない、
+  または digest の付いていない古い版は入れられない。パッケージはインストーラーがリリースの
+  SHA256 で照合する。codex.exe 単体では
   付随する実行ファイルが揃わず動かないため。見える bin dir はインストーラーの既定
   （`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`。`CODEX_INSTALL_DIR` で変更可）で、以前の版が置いた
   `~\.local\bin\codex.exe` は導入の成功後に削除する（再試行用に `Clear-LegacyCodexBinary` を単独でも呼べる）。
   `-Version` を省略するとインストーラーの latest になり、GitHub の最新タグとずれることがあるので、
-  `Get-CodexLatestVersion` と比べてから入れるなら、その版を渡す。
-  更新も同じインストーラーで行い、current と直前の版より古い版は削除する。
+  `Get-CodexLatestVersion` と比べてから入れるなら、その版を渡す（省略したときも、`install.ps1` 自体は
+  GitHub の最新タグのものを取る）。
+  更新も同じインストーラーで行い、current と直前の版より古い版は削除する（`install.ps1` は古い版を消さない）。
   共有デーモン（app-server）は自分用の codex で動くので、CLI を更新しても古い版のまま残る。
   `Sync-CodexDaemon` は、CLI とデーモンの版がずれていれば y/N を聞いて `codex app-server daemon update`
   で入れ替える（版だけを見るなら `Get-CodexDaemonVersion`）。昇格中は入れ替えない（デーモンが
