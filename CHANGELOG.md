@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Changed
+- GitHub Actions の版を workflow lockfile（`.github/workflows/actions.lock`）で commit に固定した。`uses:` は
+  完全な版のタグ（`actions/checkout@v7.0.1`。これまでは `@v5`）で書き、実際に動く commit は lockfile が固定する。
+  `verify-lockfile.yml` が PR と main への push で `gh actions-lock --verify` を回す。`.github/dependabot.yml` を
+  足し、Actions の版を週次で追従する（`kan/tagpr-scripts*` は対象外）
+
 ## [0.30.0] - 2026-11-05
 
 ### Added

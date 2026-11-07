@@ -19,13 +19,17 @@ jobs:
     # （PowerShell の解析と Pester に要る）と違って ubuntu で足りる。
     runs-on: ubuntu-latest
     steps:
+      # 実際に動く commit は .github/workflows/actions.lock が固定する（タグ付け替えを防ぐ）。
+      # uses: を変えたら gh actions-lock を流し直す。版の更新は Dependabot が lockfile ごと PR で運ぶ。
       # VERSION を読むためだけなので浅い clone でよい（タグの種別はここでは取れない。下記）。
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
 
-      # actions/checkout はタグ push でも refspec `+<コミット SHA>:refs/tags/<名前>` で取るため、
-      # ローカルの refs/tags/<名前> は annotated タグでもコミットを直接指す（fetch-depth を
-      # 増やしても変わらない）。種別を見るにはタグ ref そのものを取り直す必要がある。
-      # v0.23.2 の push で、これを省いた版が正しく打ったタグを lightweight と誤検知した。
+      # checkout の版によっては、タグ push でも refspec `+<コミット SHA>:refs/tags/<名前>` で
+      # 取るため、ローカルの refs/tags/<名前> が annotated タグでもコミットを直接指す
+      # （fetch-depth を増やしても変わらない）。v5 はそうだった —— v0.23.2 の push で、取り直しを
+      # 省いた版が正しく打ったタグを lightweight と誤検知した。v7.0.1 は全 ref を 1 回取るだけなので
+      # 今は種別が残るが、版が上がれば黙って誤検知へ変わる。版に依存しないよう、種別を見る前に
+      # タグ ref を取り直す。
       #
       # $GITHUB_REF_NAME は Actions が渡す環境変数。${{ }} で式を run へ展開すると
       # タグ名経由のスクリプト注入を許すため、環境変数のまま参照する。

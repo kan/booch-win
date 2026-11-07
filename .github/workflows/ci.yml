@@ -10,7 +10,9 @@ jobs:
   lint-and-test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      # 実際に動く commit は .github/workflows/actions.lock が固定する（タグ付け替えを防ぐ）。
+      # uses: を変えたら gh actions-lock を流し直す。版の更新は Dependabot が lockfile ごと PR で運ぶ。
+      - uses: actions/checkout@v7.0.1
 
       - name: Syntax parse (PowerShell AST)
         shell: pwsh
